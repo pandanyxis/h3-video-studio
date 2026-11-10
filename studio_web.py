@@ -3,6 +3,7 @@ import argparse
 import base64
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
+import hmac
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from io import BytesIO
 import json
@@ -132,12 +133,14 @@ class StudioHandler(BaseHTTPRequestHandler):
         super().setup()
         self.connection.settimeout(120)
 
-    def reply(self, code, kind, data):
+    def reply(self, code, kind, data, headers=None):
         self.send_response(code)
         self.send_header("Content-Type", kind)
         self.send_header("Content-Length", str(len(data)))
         self.send_header("Cache-Control", "no-store")
         self.send_header("X-Content-Type-Options", "nosniff")
+        for name, value in (headers or {}).items():
+            self.send_header(name, value)
         self.end_headers()
         self.wfile.write(data)
 
@@ -146,6 +149,25 @@ class StudioHandler(BaseHTTPRequestHandler):
 
     def local_host(self):
         return re.fullmatch(r"(localhost|127\.0\.0\.1)(:\d+)?", self.headers.get("Host", ""))
+
+    def allowed(self):
+        if not getattr(self.server, "public_origin", None):
+            if self.local_host():
+                return True
+            self.json(403, error="Open Studio via localhost.")
+            return False
+        expected = self.server.studio_auth
+        if not expected:
+            self.reply(503, "text/plain; charset=utf-8",
+                       "Stel STUDIO_PASSWORD in bij de Runpod-omgeving en start de Pod opnieuw.".encode())
+            return False
+        supplied = self.headers.get("Authorization", "").encode()
+        if hmac.compare_digest(supplied, expected):
+            return True
+        self.reply(401, "text/plain; charset=utf-8", "Log in als studio.".encode(), {
+            "WWW-Authenticate": 'Basic realm="H3 Video Studio", charset="UTF-8"',
+        })
+        return False
 
     def serve_file(self, path):
         kinds = {".mp4": "video/mp4", ".png": "image/png", ".jpg": "image/jpeg", ".webp": "image/webp", ".json": "application/json", ".log": "text/plain; charset=utf-8"}
@@ -186,8 +208,10 @@ class StudioHandler(BaseHTTPRequestHandler):
                 remaining -= len(chunk)
 
     def do_GET(self):
-        if not self.local_host():
-            return self.json(403, error="Open Studio via localhost.")
+        if self.path == "/health":
+            return self.json(200, status="ok")
+        if not self.allowed():
+            return
         if self.path == "/":
             return self.reply(200, "text/html; charset=utf-8", (HERE / "studio.html").read_bytes())
         if self.path == "/projects":
@@ -207,10 +231,12 @@ class StudioHandler(BaseHTTPRequestHandler):
         self.json(200, **project_data(project, details=True))
 
     def do_POST(self):
-        if (not self.local_host()
-                or self.headers.get("Origin") != f"http://{self.headers.get('Host')}"
+        if not self.allowed():
+            return
+        origin = getattr(self.server, "public_origin", None) or f"http://{self.headers.get('Host')}"
+        if (self.headers.get("Origin") != origin
                 or self.headers.get_content_type() != "application/json"):
-            return self.json(403, error="Open Studio via localhost.")
+            return self.json(403, error="Open Studio vanaf het Studio-adres.")
         retry = re.fullmatch(r"/projects/([a-f0-9]{32})/resume", self.path)
         if retry:
             project = ROOT / retry[1]
@@ -243,11 +269,19 @@ def main():
     args = parser.parse_args()
     ROOT = args.projects.resolve()
     ROOT.mkdir(parents=True, exist_ok=True)
-    server = ThreadingHTTPServer(("127.0.0.1", args.port), StudioHandler)
+    pod_id = os.environ.get("RUNPOD_POD_ID", "")
+    if pod_id and not re.fullmatch(r"[a-z0-9]+", pod_id):
+        raise SystemExit("Ongeldige RUNPOD_POD_ID.")
+    server = ThreadingHTTPServer(("0.0.0.0" if pod_id else "127.0.0.1", args.port), StudioHandler)
+    server.public_origin = f"https://{pod_id}-{args.port}.proxy.runpod.net" if pod_id else None
+    password = os.environ.get("STUDIO_PASSWORD", "")
+    server.studio_auth = None
+    if len(password) >= 16 and "{{" not in password:
+        server.studio_auth = b"Basic " + base64.b64encode(("studio:" + password).encode())
     for status_file in ROOT.glob("*/status"):
         if status_file.read_text(encoding="utf-8") in ("queued", "running"):
             schedule(status_file.parent)
-    print(f"H3 Video Studio http://localhost:{args.port}", flush=True)
+    print(f"H3 Video Studio {server.public_origin or f'http://localhost:{args.port}'}", flush=True)
     try:
         server.serve_forever()
     finally:

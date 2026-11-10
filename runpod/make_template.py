@@ -10,6 +10,7 @@ DEFAULT_IMAGE = 'ghcr.io/pandanyxis/h3-video-studio:latest'
 def make(image=DEFAULT_IMAGE):
     env = {
         'ENABLE_STUDIO': 'true', 'ENABLE_COMFYUI': 'true', 'ENABLE_QWEN': 'true',
+        'STUDIO_PASSWORD': '{{ RUNPOD_SECRET_STUDIO_PASSWORD }}',
         'CTX_SIZE': '65536',
         'HF_EXTRA_MODELS': '[]',
         'HF_XET_HIGH_PERFORMANCE': '1', 'HF_XET_NUM_CONCURRENT_RANGE_GETS': '32',
@@ -31,7 +32,7 @@ def make(image=DEFAULT_IMAGE):
         'containerDiskInGb': 50,
         'volumeInGb': 120,
         'volumeMountPath': '/workspace',
-        'ports': ['22/tcp'],
+        'ports': ['8190/http'],
         'env': env,
         'isServerless': False, 'isPublic': False,
     }

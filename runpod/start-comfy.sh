@@ -32,10 +32,10 @@ trap 'exit 143' TERM
 trap 'exit 130' INT
 # The token is inherited through the environment, never process arguments.
 export JUPYTER_TOKEN
-/opt/venv/bin/jupyter lab --ip=0.0.0.0 --port=8888 --no-browser --allow-root \
+/opt/venv/bin/jupyter lab --ip=127.0.0.1 --port=8888 --no-browser --allow-root \
   --ServerApp.root_dir=/workspace &
 pids+=("$!")
-/opt/venv/bin/python main.py --listen 0.0.0.0 --port 8188 \
+/opt/venv/bin/python main.py --listen 127.0.0.1 --port 8188 \
   --disable-dynamic-vram --preview-method auto \
   --base-directory /workspace/ComfyUI \
   --extra-model-paths-config /workspace/combined/model-paths.yaml &

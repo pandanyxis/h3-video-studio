@@ -146,7 +146,7 @@ const $ = selector => document.querySelector(selector);
 const state = { id:null, generation:0, timer:null, previewUrls:[], shotSignature:null, referenceId:null };
 const stages = ['input','planning','writing','rendering','exporting'];
 const labels = {
-  queued:'Je project staat in de wachtrij.', preparing:'Studio wacht op de GPU-host en de modellen. Controleer de SSH-verbinding als Studio op je pc draait.',
+  queued:'Je project staat in de wachtrij.', preparing:'Studio wacht op de GPU en de modellen. Bij de eerste start kan dit even duren.',
   planning:'Studio kiest het aantal en de lengte van de shots die je verhaal nodig heeft.', writing:'Studio Writer schrijft de volledige H3-prompt voor elk shot.',
   references:'Studio koppelt je referentiebeelden aan de shots.', rendering:'Studio genereert je videoclips.',
   exporting:'Studio haalt de clips op en voegt ze samen.', done:'Je film is klaar.', failed:'De productie is onderbroken.'

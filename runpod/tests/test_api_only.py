@@ -28,7 +28,8 @@ class ApiOnlyTests(unittest.TestCase):
             with patch.object(template, 'ROOT', path):
                 result = template.make()
         self.assertNotIn('3000/http', result['ports'])
-        self.assertEqual(result['ports'], ['22/tcp'])
+        self.assertEqual(result['ports'], ['8190/http'])
+        self.assertEqual(result['env']['STUDIO_PASSWORD'], '{{ RUNPOD_SECRET_STUDIO_PASSWORD }}')
         self.assertFalse(result['isPublic'])
         self.assertEqual(result['volumeMountPath'], '/workspace')
         weights = json.loads((ROOT / 'model-manifest.json').read_text())

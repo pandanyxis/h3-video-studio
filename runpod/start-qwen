@@ -35,7 +35,7 @@ export LD_LIBRARY_PATH="${LLAMA_LIB_DIR:-/opt/llama/lib}:${LD_LIBRARY_PATH:-}"
 exec "${LLAMA_SERVER:-/opt/llama/bin/llama-server}" \
   --model "$ROOT/models/$MODEL" --alias qwen-hauhau \
   --mmproj "$ROOT/models/$PROJECTOR" \
-  --host 0.0.0.0 --port 8080 \
+  --host 127.0.0.1 --port 8080 \
   --ctx-size "${CTX_SIZE:-8192}" --parallel 1 \
   --n-gpu-layers 99 --flash-attn on \
   --batch-size 512 --ubatch-size 128 \

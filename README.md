@@ -14,11 +14,7 @@ python runpod/make_template.py --image ghcr.io/pandanyxis/h3-video-studio:COMMIT
 
 Gebruik de gegenereerde configuratie voor een Pod met een RTX PRO 6000 Blackwell 96 GB en CUDA 13 of nieuwer. De template reserveert 50 GB voor de container en 120 GB voor modellen en projecten op `/workspace`. Voor een private image heeft Runpod leesrechten nodig via Container Registry Auth. Zie [de GPU-configuratie](runpod/README.md) voor opslag en toegang.
 
-De interface, planner, Writer, render en export draaien allemaal op de Linux-Pod. Open op je pc een SSH-tunnel en ga in je browser naar [Studio op localhost](http://localhost:8190/).
-
-```sh
-ssh -N -L 8190:127.0.0.1:8190 -p SSH_PORT root@POD_IP
-```
+De interface, planner, Writer, render en export draaien allemaal op de Linux-Pod. Maak eenmalig een Runpod Secret `STUDIO_PASSWORD` met een wachtwoord van minstens 16 tekens. Open daarna in Runpod **Connect → HTTP Service (8190)** en log in als `studio`. Elke nieuwe Pod krijgt een eigen HTTPS-link.
 
 Voeg een verhaal en referentiebeelden toe en klik op **Maak mijn film**. De projectpagina toont de status en biedt de MP4 aan zodra de export klaar is. Je vindt eerdere projecten in de zijbalk. Studio bewaart het shotplan en de prompts en pakt actieve projecten na een herstart weer op. Bij een onderbreking kun je het productielog openen en de verwerking hervatten. Bewaarde clips en renderaanvragen worden hergebruikt. Een mislukte of onzekere GPU-taak kan herstel in de renderdienst vereisen.
 

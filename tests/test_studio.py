@@ -158,6 +158,32 @@ class WebTests(unittest.TestCase):
             finally:
                 web.ACTIVE.discard(project.name)
 
+    def test_runpod_proxy_requires_login_and_its_own_https_origin(self):
+        self.server.public_origin = "https://testpod-8190.proxy.runpod.net"
+        self.server.studio_auth = b"Basic " + base64.b64encode(b"studio:local-test-password")
+        with self.assertRaises(HTTPError) as error:
+            urlopen(self.url + "/projects")
+        self.assertEqual(error.exception.code, 401)
+        self.assertIn('H3 Video Studio', error.exception.headers["WWW-Authenticate"])
+        error.exception.close()
+        with urlopen(self.url + "/health") as response:
+            self.assertEqual(response.status, 200)
+        headers = {"Authorization": self.server.studio_auth.decode(),
+                   "Content-Type": "application/json", "Origin": "https://other.example"}
+        payload = json.dumps({"story": "Een boot", "images": [image_data()]}).encode()
+        with self.assertRaises(HTTPError) as error:
+            urlopen(Request(self.url + "/projects", data=payload, headers=headers))
+        self.assertEqual(error.exception.code, 403)
+        error.exception.close()
+        headers["Origin"] = self.server.public_origin
+        with patch.object(web, "schedule"), urlopen(Request(self.url + "/projects", data=payload, headers=headers)) as response:
+            self.assertEqual(response.status, 202)
+        self.server.studio_auth = None
+        with self.assertRaises(HTTPError) as error:
+            urlopen(Request(self.url + "/projects", headers=headers))
+        self.assertEqual(error.exception.code, 503)
+        error.exception.close()
+
 
 class ProductionTests(unittest.TestCase):
     def test_lost_render_response_reuses_request_and_saved_prompts(self):

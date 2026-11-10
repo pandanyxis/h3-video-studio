@@ -16,13 +16,9 @@ De modelscripts verifiëren de bestanden op de Pod. Een volgende start op hetzel
 
 ## Toegang
 
-De template publiceert alleen SSH. Stel je publieke SSH-sleutel in bij Runpod of via `PUBLIC_KEY` en verbind de Studio-interface via een tunnel.
+De template publiceert alleen de Studio-interface op poort `8190/http`. Maak een Runpod Secret `STUDIO_PASSWORD` met minstens 16 tekens. De template verwijst naar dat Secret. Open in Runpod **Connect → HTTP Service (8190)** en log in met gebruikersnaam `studio` en dat wachtwoord. Elke nieuwe Pod krijgt een eigen HTTPS-adres. Zonder wachtwoordconfiguratie geeft Studio geen toegang tot projecten.
 
-```sh
-ssh -N -L 8190:127.0.0.1:8190 -p SSH_PORT root@POD_IP
-```
-
-Open http://localhost:8190. Qwen en ComfyUI zijn beschikbaar voor Studio binnen de Pod. Bij de eerste start downloaden en verifiëren ze de gewichten. De logregels `[qwen]` en `[comfy]` laten de voortgang zien.
+Qwen en ComfyUI luisteren binnen de Pod. Bij de eerste start downloaden en verifiëren ze de gewichten. De logregels `[qwen]` en `[comfy]` laten de voortgang zien.
 
 De runtime genereert standaard een Qwen-sleutel en bewaart die privé op `/workspace`. Voor een vaste sleutel kun je `LLAMA_API_KEY` via Runpod Secrets instellen. Gebruik eventueel `HF_TOKEN` of `CIVITAI_TOKEN` voor aanvullende downloads. Houd `runtime-settings.json` met lokale instellingen buiten Git. Zie [de modelconfiguratie](RUNPOD-MODELS.md) voor opties.
 

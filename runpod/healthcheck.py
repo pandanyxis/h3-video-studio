@@ -23,7 +23,7 @@ def main():
     urls = []
     if all(os.environ.get(name, "true") == "true"
            for name in ("ENABLE_STUDIO", "ENABLE_COMFYUI", "ENABLE_QWEN")):
-        urls.append("http://127.0.0.1:8190/")
+        urls.append("http://127.0.0.1:8190/health")
     if os.environ.get('ENABLE_COMFYUI', 'true') == 'true':
         urls.append('http://127.0.0.1:8188/system_stats')
         if os.environ.get('REQUIRE_MINIMAX_DOWNLOADS', 'false') == 'true':
