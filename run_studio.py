@@ -6,7 +6,7 @@ import uuid
 from pathlib import Path
 
 from export_project import export_project
-from prepare_timeline import timeline_document
+from prepare_timeline import ASPECT_SIZES, timeline_document
 from studio_render import RenderClient, RenderError
 from studio_storage import atomic_json, gpu_lock, progress, read_json
 from studio_writer import plan_and_write, qwen_ready
@@ -53,7 +53,7 @@ def produce(args):
         else:
             plan = plan_and_write(story, pictures, project)
             atomic_json(plan_file, plan)
-        body = timeline_document(plan, project.name, args.profile)
+        body = timeline_document(plan, project.name, args.profile, getattr(args, "aspect", None))
         for box, shot in zip(body["timeline"]["boxes"], plan["shots"]):
             box["prompt"] = shot["prompt"]
         progress(project, "references")
@@ -105,6 +105,7 @@ def main():
     parser.add_argument("project", type=Path)
     parser.add_argument("references", type=Path, nargs="+")
     parser.add_argument("--profile", default="studio-turbo8")
+    parser.add_argument("--aspect", choices=ASPECT_SIZES)
     parser.add_argument("--resume", action="store_true")
     args = parser.parse_args()
     if len(args.references) > 9:

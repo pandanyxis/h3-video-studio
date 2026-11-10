@@ -6,6 +6,14 @@ De standaard T2V- en I2V-workflows wijzen naar het Comfy-Org-model. Bestaande pe
 
 ## Extra modellen bij opstart
 
+Kies in Studio per project een renderprofiel en een beeldverhouding. Automatisch gebruikt de oriëntatie van je eerste referentiebeeld. Je kunt ook 16:9 (1024 × 576) of 9:16 (576 × 1024) kiezen.
+
+Zet in Runpod bij `STUDIO_RENDER_PROFILES` een JSON-lijst met eigen profielen. Gebruik de exacte bestandsnamen zoals ComfyUI ze ziet. Het model moet compatibel zijn met de MiniMax H3-workflow en de LoRA met dat model. Download de bestanden via de velden hieronder. Na het opstarten verschijnen beschikbare profielen in Studio.
+
+```json
+[{"id":"eigen-h3","title":"Eigen H3","model":"mijn-h3.safetensors","lora":"mijn-lora.safetensors","steps":8,"lora_strength":0.8}]
+```
+
 Stel HF_TOKEN en CIVITAI_TOKEN in via Runpod Secrets. Selecteer de downloads met:
 
 - CIVITAI_CHECKPOINTS, CIVITAI_LORAS en CIVITAI_DIFFUSION_MODELS. Gebruik kommagescheiden identifiers zoals model:123 of version:456.

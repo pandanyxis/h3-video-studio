@@ -19,7 +19,8 @@ import warnings
 
 from PIL import Image, UnidentifiedImageError
 
-from prepare_timeline import FPS
+from prepare_timeline import ASPECT_SIZES, FPS
+from studio_render import RenderClient, RenderError
 from studio_storage import atomic_json, progress, read_json
 
 ROOT = Path(os.environ.get("STUDIO_PROJECTS", "/workspace/studio/projects"))
@@ -30,10 +31,28 @@ QUEUE_LOCK = threading.Lock()
 MAX_IMAGE = 8 * 1024 * 1024
 MAX_REQUEST = 100 * 1024 * 1024
 Image.MAX_IMAGE_PIXELS = 25_000_000
+DEFAULT_PROFILE = {"id": "studio-turbo8", "title": "Studio H3 Turbo 8-step"}
+
+
+def render_profiles():
+    try:
+        profiles = RenderClient().capabilities()["profiles"]
+    except (OSError, ValueError, RenderError):
+        profiles = []
+    return [DEFAULT_PROFILE, *(
+        {"id": item["id"], "title": item.get("title", item["id"])}
+        for item in profiles if item.get("ready") and item["id"] != DEFAULT_PROFILE["id"]
+    )]
 
 
 def stage(payload):
     story, images = payload.get("story"), payload.get("images")
+    profile = payload.get("profile", DEFAULT_PROFILE["id"])
+    aspect = payload.get("aspect", "auto")
+    if not isinstance(aspect, str) or (aspect != "auto" and aspect not in ASPECT_SIZES):
+        raise ValueError("Kies automatisch, 16:9 of 9:16.")
+    if profile != DEFAULT_PROFILE["id"] and not any(profile == item["id"] for item in render_profiles()):
+        raise ValueError("Dit renderprofiel is niet beschikbaar.")
     if not isinstance(story, str) or not story.strip() or len(story) > 20_000:
         raise ValueError("Voer een shotidee of verhaal in van maximaal 20.000 tekens.")
     if not isinstance(images, list) or not 1 <= len(images) <= 9:
@@ -55,10 +74,18 @@ def stage(payload):
                     if not extension:
                         raise ValueError("Gebruik JPEG-, PNG- of WebP-beelden.")
                     image.verify()
+            if index == 1 and aspect == "auto":
+                with Image.open(BytesIO(data)) as image:
+                    width, height = image.size
+                    if image.getexif().get(274) in (5, 6, 7, 8):
+                        width, height = height, width
+                    aspect = "9:16" if height > width else "16:9"
             (project / f"reference-{index:02d}.{extension}").write_bytes(data)
         atomic_json(project / "project.json", {
             "title": story.strip().splitlines()[0][:80],
             "created": datetime.now(timezone.utc).isoformat(),
+            "profile": profile,
+            "aspect": aspect,
         })
         set_status(project, "queued")
         progress(project, "queued")
@@ -98,6 +125,11 @@ def render(project, resume=False):
         set_status(project, "running")
         command = [sys.executable, str(HERE / "run_studio.py"), str(project / "story.txt"),
                    str(project), *map(str, sorted(project.glob("reference-*")))]
+        meta = project_data(project)
+        if meta.get("profile"):
+            command.extend(["--profile", meta["profile"]])
+        if meta.get("aspect"):
+            command.extend(["--aspect", meta["aspect"]])
         if resume:
             command.append("--resume")
         with (project / "render.log").open("ab") as log:
@@ -212,6 +244,8 @@ class StudioHandler(BaseHTTPRequestHandler):
             return self.json(200, status="ok")
         if not self.allowed():
             return
+        if self.path == "/profiles":
+            return self.json(200, profiles=render_profiles())
         if self.path == "/":
             return self.reply(200, "text/html; charset=utf-8", (HERE / "studio.html").read_bytes())
         if self.path == "/projects":

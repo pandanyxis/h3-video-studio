@@ -6,6 +6,7 @@ from pathlib import Path
 from plan_story import MAX_SHOT_SECONDS, validate_plan
 
 FPS = 24
+ASPECT_SIZES = {"16:9": (1024, 576), "9:16": (576, 1024)}
 FRAME_GRID = 17
 
 
@@ -19,7 +20,8 @@ def shot_frames(duration, fresh):
     return min(steps, limit) * FRAME_GRID + offset
 
 
-def timeline_document(plan, name, profile):
+def timeline_document(plan, name, profile, aspect=None):
+    width, height = ASPECT_SIZES[aspect] if aspect else (768, 448)
     shots = validate_plan(plan)
     boxes = []
     for index, shot in enumerate(shots, 1):
@@ -46,7 +48,7 @@ def timeline_document(plan, name, profile):
     return {
         "name": name,
         "profile": profile,
-        "settings": {"width": 768, "height": 448, "context_frames": context,
+        "settings": {"width": width, "height": height, "context_frames": context,
                      "carry_audio": True, "ref_image_size": "match"},
         "timeline": {"version": 1, "boxes": boxes},
         "assets": [],
