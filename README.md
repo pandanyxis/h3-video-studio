@@ -12,7 +12,7 @@ GitHub Actions bouwt de image vanaf de repo-root met `runpod/Dockerfile` en publ
 python runpod/make_template.py --image ghcr.io/pandanyxis/h3-video-studio:COMMIT_SHA
 ```
 
-Gebruik de gegenereerde configuratie voor een Pod met een RTX PRO 6000 Blackwell 96 GB en CUDA 13. Voor een private image heeft Runpod leesrechten nodig via Container Registry Auth. Koppel persistente opslag aan `/workspace` om projecten te bewaren.
+Gebruik de gegenereerde configuratie voor een Pod met een RTX PRO 6000 Blackwell 96 GB en CUDA 13 of nieuwer. De template reserveert 50 GB voor de container en 120 GB voor modellen en projecten op `/workspace`. Voor een private image heeft Runpod leesrechten nodig via Container Registry Auth. Zie [de GPU-configuratie](runpod/README.md) voor opslag en toegang.
 
 De Studio-interface luistert op de loopback-interface van de Pod. Open een SSH-tunnel en ga in de browser naar [Studio op localhost](http://localhost:8190/).
 

@@ -1,4 +1,4 @@
-"""Create a private Runpod template that pulls the prebuilt combined image."""
+"""Prepare a private Runpod REST template for the Studio GPU runtime."""
 import argparse
 import json
 from pathlib import Path
@@ -22,21 +22,18 @@ def make(image=DEFAULT_IMAGE):
         env.update(json.loads(settings.read_text(encoding='utf-8')))
     # Ignore removed UI settings from older private configurations.
     for key in list(env):
-        if key in ('ENABLE_WEBUI', 'ENABLE_WRITER') or key.startswith('WEBUI_'):
+        if key in ('ENABLE_WEBUI', 'ENABLE_WRITER', 'PERSIST_MODELS_TO_VOLUME',
+                   'GLOBAL_MODEL_CACHE_DIR') or key.startswith('WEBUI_'):
             env.pop(key)
-    # Extra Civitai fields remain configurable through runtime-settings.json.
-    env['PERSIST_MODELS_TO_VOLUME'] = 'false'
-    env.pop('GLOBAL_MODEL_CACHE_DIR', None)
     return {
         'name': 'H3 Video Studio',
-        'image': image,
-        'disk': 200,
-        'mounts': {},
+        'imageName': image,
+        'containerDiskInGb': 50,
+        'volumeInGb': 120,
+        'volumeMountPath': '/workspace',
         'ports': ['22/tcp'],
         'env': env,
-        'allowedCudaVersions': ['13.0'],
-        'category': 'NVIDIA', 'serverless': False, 'public': False,
-        'startSsh': True, 'startJupyter': False,
+        'isServerless': False, 'isPublic': False,
     }
 
 
@@ -48,4 +45,4 @@ if __name__ == '__main__':
     path = ROOT / 'runpod-template.json'
     data = make(args.image)
     path.write_text(json.dumps(data, indent=2) + '\n', encoding='utf-8')
-    print('Prepared image-based template; no custom startup command or storage mounts.')
+    print('Prepared private Runpod template with a 120 GB workspace volume.')

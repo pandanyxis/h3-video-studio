@@ -17,17 +17,23 @@ def load(name, file):
 
 
 class ApiOnlyTests(unittest.TestCase):
-    def test_template_removes_legacy_ui_settings_preserving_api(self):
+    def test_template_is_private_and_sizes_workspace_for_model_weights(self):
         template = load('template', 'make_template.py')
         with tempfile.TemporaryDirectory() as folder:
             path = Path(folder)
             (path / 'runtime-settings.json').write_text(json.dumps({
                 'ENABLE_WEBUI': 'true', 'WEBUI_ADMIN_PASSWORD': 'obsolete',
-                'LLAMA_API_KEY': 'retained-api-key', 'CTX_SIZE': '32768'}))
+                'LLAMA_API_KEY': 'retained-api-key', 'CTX_SIZE': '32768',
+                'PERSIST_MODELS_TO_VOLUME': 'false'}))
             with patch.object(template, 'ROOT', path):
                 result = template.make()
         self.assertNotIn('3000/http', result['ports'])
         self.assertEqual(result['ports'], ['22/tcp'])
+        self.assertFalse(result['isPublic'])
+        self.assertEqual(result['volumeMountPath'], '/workspace')
+        weights = json.loads((ROOT / 'model-manifest.json').read_text())
+        self.assertGreater(result['volumeInGb'] * 10**9, sum(model['size'] for model in weights))
+        self.assertNotIn('PERSIST_MODELS_TO_VOLUME', result['env'])
         self.assertFalse(any(k == 'ENABLE_WEBUI' or k.startswith('WEBUI_') for k in result['env']))
         self.assertEqual(result['env']['LLAMA_API_KEY'], 'retained-api-key')
         self.assertEqual(result['env']['CTX_SIZE'], '32768')
