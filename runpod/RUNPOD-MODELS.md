@@ -1,6 +1,6 @@
 # Runpod-modelprofiel
 
-De standaardbuild gebruikt MiniMax H3 FL2VA Pruned INT8 van Comfy-Org, plus de bestaande tekstencoder, audio- en video-VAE, Turbo-LoRA en preview. Qwen blijft apart voor de planner en Writer. Eros, Mystic en de privémirror worden niet automatisch opgehaald. Dat scheelt circa 22 GB aan downloads.
+De standaardbuild gebruikt MiniMax H3 FL2VA Pruned INT8 van Comfy-Org, plus de bestaande tekstencoder, audio- en video-VAE, Turbo-LoRA en preview. Qwen genereert de shotprompts voor Studio. Eros, Mystic en de privémirror worden niet automatisch opgehaald. Dat scheelt circa 22 GB aan downloads.
 
 De standaard T2V- en I2V-workflows wijzen naar het Comfy-Org-model. Bestaande persoonlijke workflows worden niet overschreven. Pas op een bestaand volume zo nodig de UNET-loader aan.
 

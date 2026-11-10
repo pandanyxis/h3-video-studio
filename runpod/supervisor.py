@@ -14,8 +14,8 @@ def enabled(name):
 
 def main():
     comfy, qwen = [enabled(n) for n in ("ENABLE_COMFYUI", "ENABLE_QWEN")]
-    writer = os.environ.get("ENABLE_WRITER", "false") == "true"
-    if not (comfy or qwen or writer):
+    studio = enabled("ENABLE_STUDIO") and comfy and qwen
+    if not (comfy or qwen):
         raise SystemExit("Enable at least one service")
     if qwen and len(os.environ.get("LLAMA_API_KEY", "")) < 32:
         raise SystemExit("Set LLAMA_API_KEY to at least 32 random characters")
@@ -30,8 +30,8 @@ def main():
     signal.signal(signal.SIGINT, stop)
     try:
         commands = []
-        if writer:
-            commands.append(["bash", "/opt/combined/start-writer.sh"])
+        if studio:
+            commands.append(["/opt/venv/bin/python", "/opt/studio/studio_web.py"])
         if comfy:
             commands.append(["bash", os.environ.get("COMFY_START_SCRIPT", "/start_script.sh")])
         if qwen:

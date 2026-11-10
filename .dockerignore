@@ -4,7 +4,6 @@
 **/runpod-template.json
 **/__pycache__
 **/.venv
-writer/data
 **/*.sqlite3*
 **/*.pem
 **/*.key

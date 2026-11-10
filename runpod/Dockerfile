@@ -46,24 +46,18 @@ RUN --mount=from=builder,source=/opt/cuda-link,target=/opt/cuda-link \
     chmod +x /usr/local/bin/start-qwen /usr/local/bin/start-services.sh \
     && bash -n /usr/local/bin/start-qwen /usr/local/bin/start-services.sh /opt/combined/start-comfy.sh \
     && LD_LIBRARY_PATH=/opt/cuda-link:/opt/llama/lib:$LD_LIBRARY_PATH /opt/llama/bin/llama-server --version
-COPY writer/requirements.txt /opt/writer/requirements.txt
-RUN python3 -m venv /opt/writer-venv \
-    && env -u PIP_CONSTRAINT /opt/writer-venv/bin/pip install --no-cache-dir -r /opt/writer/requirements.txt
-COPY writer/h3_standalone/ /opt/writer/h3_standalone/
-COPY writer/upstream/ /opt/writer/upstream/
-COPY writer/ui/ /opt/writer/ui/
-COPY writer/VERSION writer/LICENSE /opt/writer/
-COPY plan_story.py prepare_timeline.py export_project.py run_studio.py /opt/studio/
+COPY requirements.txt /opt/studio/requirements.txt
+RUN /opt/venv/bin/pip install --no-cache-dir -r /opt/studio/requirements.txt
+COPY plan_story.py prepare_timeline.py export_project.py run_studio.py studio_writer.py studio_storage.py studio_render.py studio_web.py studio.html /opt/studio/
 COPY runpod/studio-profile.py /opt/combined/
 RUN python3 /opt/combined/studio-profile.py
-COPY runpod/start-writer.sh /opt/combined/
 ENV PATH=/opt/venv/bin:$PATH
-ENV ENABLE_WRITER=true ENABLE_COMFYUI=true ENABLE_QWEN=true CTX_SIZE=65536 \
+ENV ENABLE_STUDIO=true ENABLE_COMFYUI=true ENABLE_QWEN=true CTX_SIZE=65536 \
     COMFY_START_SCRIPT=/opt/combined/start-comfy.sh \
     HF_HOME=/workspace/qwen-runpod/hf-cache HF_XET_HIGH_PERFORMANCE=1 \
     HF_XET_NUM_CONCURRENT_RANGE_GETS=32 HF_HUB_DOWNLOAD_TIMEOUT=60 HF_HUB_DISABLE_UPDATE_CHECK=1
 WORKDIR /workspace
-EXPOSE 8188 8080 8888 22
+EXPOSE 8190 8188 8080 8888 22
 HEALTHCHECK --interval=30s --timeout=15s --start-period=90m --retries=3 CMD ["/usr/bin/python3", "/opt/combined/healthcheck.py"]
 ENTRYPOINT ["/opt/nvidia/nvidia_entrypoint.sh"]
 CMD ["/usr/bin/python3", "-u", "/opt/combined/start-prebuilt.py"]

@@ -21,7 +21,8 @@ def downloads_ready(hf_status, civitai_status, manifest, civitai_models, workspa
 
 def main():
     urls = []
-    if os.environ.get("ENABLE_WRITER", "false") == "true":
+    if all(os.environ.get(name, "true") == "true"
+           for name in ("ENABLE_STUDIO", "ENABLE_COMFYUI", "ENABLE_QWEN")):
         urls.append("http://127.0.0.1:8190/")
     if os.environ.get('ENABLE_COMFYUI', 'true') == 'true':
         urls.append('http://127.0.0.1:8188/system_stats')

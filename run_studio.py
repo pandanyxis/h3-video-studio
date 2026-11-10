@@ -1,78 +1,32 @@
-"""Render a story and up to nine reference pictures on the Studio Runpod."""
+"""Produce five connected shots and a complete film on the Studio GPU host."""
 import argparse
-import base64
-import fcntl
 import json
 import mimetypes
-import os
-import re
-import sys
 import time
 import uuid
 from pathlib import Path
-from urllib.request import Request, urlopen
 
 from export_project import export_project
-from plan_story import validate_plan
 from prepare_timeline import timeline_document
-
-sys.path.insert(0, "/ComfyUI/custom_nodes/ComfyUI-H3-Continuity-Studio/examples")
-from timeline_api import Client, atomic_json
-
-
-def plan_with_writer(story, pictures):
-    with urlopen("http://127.0.0.1:8190/h3studio/guides/Reference", timeout=30) as response:
-        guide = json.load(response)["guide"]["content"]
-    content = [{"type": "text", "text": story}]
-    for slot, path in pictures:
-        mime = mimetypes.guess_type(path.name)[0]
-        encoded = base64.b64encode(path.read_bytes()).decode("ascii")
-        content.extend([
-            {"type": "text", "text": f"Reference @{slot}"},
-            {"type": "image_url", "image_url": {"url": f"data:{mime};base64,{encoded}"}},
-        ])
-    payload = {
-        "model": "qwen-hauhau",
-        "response_format": {"type": "json_object"},
-        "max_tokens": 4096,
-        "messages": [
-            {"role": "system", "content": "Return only a JSON object "
-             "with a shots array of exactly five consecutive short shots. Each shot needs "
-             "nonempty action, camera, sound, start, end and prompt strings. Write each "
-             "prompt as a self-contained MiniMax H3 video prompt using the Writer guidance. "
-             "Use only the supplied logical @imageN labels when referring to the pictures. "
-             "Keep characters and settings consistent across adjacent shots. "
-             "Use the guide below for the prompt fields only.\n" + guide},
-            {"role": "user", "content": content},
-        ],
-    }
-    key = os.environ.get("LLAMA_API_KEY") or read_json(Path("/workspace/combined/access.json"))["LLAMA_API_KEY"]
-    request = Request(
-        "http://127.0.0.1:8080/v1/chat/completions",
-        data=json.dumps(payload).encode(),
-        headers={"Content-Type": "application/json",
-                 "Authorization": "Bearer " + key},
-    )
-    with urlopen(request, timeout=900) as response:
-        plan = json.loads(json.load(response)["choices"][0]["message"]["content"])
-    shots = validate_plan(plan, 5)
-    slots = {slot for slot, _ in pictures}
-    used = set()
-    for shot in shots:
-        prompt = shot.get("prompt")
-        if not isinstance(prompt, str) or not prompt.strip():
-            raise ValueError("Writer returned an empty shot prompt")
-        labels = set(re.findall(r"@(image\d+)\b", prompt))
-        if not labels <= slots:
-            raise ValueError("Writer returned an unknown picture slot")
-        used.update(labels)
-    if not used:
-        raise ValueError("Writer did not use any reference pictures")
-    return {"story": story, "shots": shots}
+from studio_render import RenderClient, RenderError
+from studio_storage import atomic_json, progress, read_json
+from studio_writer import plan_and_write
 
 
-def read_json(path):
-    return json.loads(path.read_text(encoding="utf-8"))
+def wait_for_models(client, project, profile_id):
+    progress(project, "preparing")
+    until = time.monotonic() + 90 * 60
+    while True:
+        try:
+            profiles = client.capabilities()["profiles"]
+            profile = next((item for item in profiles if item["id"] == profile_id), {})
+            if profile.get("ready"):
+                return
+        except (OSError, ValueError, RenderError):
+            pass
+        if time.monotonic() >= until:
+            raise RuntimeError("De videomodellen zijn nog niet beschikbaar. Controleer de GPU-host en hervat het project.")
+        time.sleep(5)
 
 
 def produce(args):
@@ -81,24 +35,31 @@ def produce(args):
     clips = project / "clips"
     clips.mkdir(exist_ok=True)
     film = project / "film.mp4"
-    client = Client("http://127.0.0.1:8188")
+    if film.is_file():
+        progress(project, "done")
+        return film
+    client = RenderClient()
+    wait_for_models(client, project, args.profile)
     receipt = project / "production.json"
     if receipt.exists():
         state = read_json(receipt)
     else:
         story = args.story.read_text(encoding="utf-8-sig").strip()
         if not story:
-            raise ValueError("Story is empty")
-        profile = next((p for p in client.capabilities()["profiles"] if p["id"] == args.profile), {})
-        if not profile.get("ready"):
-            raise RuntimeError(f"Continuity profile is unavailable: {profile}")
+            raise ValueError("Voer een verhaal of shotidee in.")
         pictures = [(f"image{index}", path) for index, path in enumerate(args.references, 17)]
-        plan = plan_with_writer(story, pictures)
+        plan_file = project / "shots.json"
+        if plan_file.exists():
+            plan = read_json(plan_file)
+        else:
+            plan = plan_and_write(story, pictures, project)
+            atomic_json(plan_file, plan)
         body = timeline_document(plan, project.name, args.profile)
         for box, shot in zip(body["timeline"]["boxes"], plan["shots"]):
             box["prompt"] = shot["prompt"]
+        progress(project, "references")
         for slot, path in pictures:
-            asset = client.upload(path, "picture")
+            asset = client.upload(path)
             body["assets"].append({"asset_id": asset["id"], "bindings": [
                 {"kind": "picture", "slot": slot, "title": path.stem},
             ]})
@@ -106,8 +67,7 @@ def produce(args):
         atomic_json(receipt, state)
     atomic_json(project / "shots.json", state["plan"])
     atomic_json(project / "timeline.json", state["document"])
-    if film.exists():
-        return film
+    progress(project, "rendering")
     if "job_id" not in state:
         if "render" not in state:
             created = client.create(state["document"], state["key"])
@@ -116,27 +76,39 @@ def produce(args):
             state["render"] = dict(selection, plan_sha256=render_plan["plan_sha256"])
             state["project_id"] = created["id"]
             atomic_json(receipt, state)
-        # Qwen sleeps after 10 seconds of inactivity, releasing its GPU allocation.
+        # The local Qwen server releases its GPU allocation after ten idle seconds.
         time.sleep(12)
         job = client.render(state["project_id"], state["render"], state["key"])
         state["job_id"] = job["id"]
         atomic_json(receipt, state)
-    print(f"Continuity job {state['job_id']}", flush=True)
-    job = client.wait(state["job_id"], deadline=4 * 3600)
+    elif getattr(args, "resume", False):
+        if client.job(state["job_id"]).get("state") in ("failed", "needs_reconciliation"):
+            client.resume(state["job_id"])
+
+    def update(job):
+        finished = len([item for item in job.get("artifacts", []) if item["kind"] == "box"])
+        progress(project, "rendering", completed=finished, total=len(state["plan"]["shots"]))
+
+    job = client.wait(state["job_id"], on_update=update)
     artifacts = {item["unit_id"]: item for item in job["artifacts"] if item["kind"] == "box"}
-    for index in range(1, 6):
+    progress(project, "exporting")
+    for index in range(1, len(state["plan"]["shots"]) + 1):
         shot = f"shot-{index:02d}"
         client.download(artifacts[f"box:{shot}"], clips / f"{shot}.mp4")
     export_project(project, film)
+    progress(project, "done")
     return film
 
 
 def main():
+    import fcntl
+
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("story", type=Path)
     parser.add_argument("project", type=Path)
     parser.add_argument("references", type=Path, nargs="+")
     parser.add_argument("--profile", default="studio-turbo8")
+    parser.add_argument("--resume", action="store_true")
     args = parser.parse_args()
     if len(args.references) > 9:
         parser.error("Supply at most nine reference pictures")
@@ -145,7 +117,11 @@ def main():
         parser.error("Reference pictures must be JPEG, PNG or WebP")
     with open("/workspace/.studio-render.lock", "a") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
-        print(produce(args))
+        try:
+            print(produce(args))
+        except Exception as error:
+            progress(args.project, "failed", error=str(error))
+            raise
 
 
 if __name__ == "__main__":

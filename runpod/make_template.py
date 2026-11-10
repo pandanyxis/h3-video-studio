@@ -9,7 +9,7 @@ DEFAULT_IMAGE = 'ghcr.io/pandanyxis/h3-video-studio:latest'
 
 def make(image=DEFAULT_IMAGE):
     env = {
-        'ENABLE_WRITER': 'true', 'ENABLE_COMFYUI': 'true', 'ENABLE_QWEN': 'true',
+        'ENABLE_STUDIO': 'true', 'ENABLE_COMFYUI': 'true', 'ENABLE_QWEN': 'true',
         'CTX_SIZE': '65536',
         'HF_EXTRA_MODELS': '[]',
         'HF_XET_HIGH_PERFORMANCE': '1', 'HF_XET_NUM_CONCURRENT_RANGE_GETS': '32',
@@ -22,7 +22,7 @@ def make(image=DEFAULT_IMAGE):
         env.update(json.loads(settings.read_text(encoding='utf-8')))
     # Ignore removed UI settings from older private configurations.
     for key in list(env):
-        if key == 'ENABLE_WEBUI' or key.startswith('WEBUI_'):
+        if key in ('ENABLE_WEBUI', 'ENABLE_WRITER') or key.startswith('WEBUI_'):
             env.pop(key)
     # Extra Civitai fields remain configurable through runtime-settings.json.
     env['PERSIST_MODELS_TO_VOLUME'] = 'false'
@@ -34,7 +34,7 @@ def make(image=DEFAULT_IMAGE):
         'mounts': {},
         'ports': ['22/tcp'],
         'env': env,
-        'allowedCudaVersions': ['13.0', '13.1', '13.2', '13.3', '13.4'],
+        'allowedCudaVersions': ['13.0'],
         'category': 'NVIDIA', 'serverless': False, 'public': False,
         'startSsh': True, 'startJupyter': False,
     }

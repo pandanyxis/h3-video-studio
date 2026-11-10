@@ -1,0 +1,348 @@
+<!doctype html>
+<html lang="nl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>H3 Video Studio</title>
+<style>
+:root { color-scheme:dark; font:15px/1.55 system-ui,sans-serif; background:#0c1118; color:#e9eef6; --muted:#9aabc0; --line:#283344; --accent:#b6f1cf; }
+* { box-sizing:border-box; }
+body { margin:0; }
+button,input,textarea { font:inherit; }
+button,a { -webkit-tap-highlight-color:transparent; }
+button { cursor:pointer; }
+button:disabled { cursor:wait; opacity:.55; }
+a { color:var(--accent); }
+button:focus-visible,a:focus-visible,input:focus-visible,textarea:focus-visible { outline:2px solid var(--accent); outline-offset:4px; }
+[hidden] { display:none!important; }
+.shell { display:grid; grid-template-columns:260px minmax(0,1fr); min-height:100vh; }
+aside { padding:28px 20px; border-right:1px solid var(--line); background:#101721; }
+.brand { display:flex; align-items:center; gap:12px; margin-bottom:30px; font-size:17px; font-weight:750; }
+.mark { display:grid; place-items:center; width:40px; height:40px; border:1px solid #476553; border-radius:12px; color:var(--accent); font-size:18px; }
+.eyebrow { color:var(--muted); text-transform:uppercase; font-size:11px; font-weight:700; letter-spacing:.15em; }
+.primary,.secondary,.download { display:inline-block; border:1px solid transparent; padding:11px 18px; border-radius:8px; font-weight:650; text-decoration:none; }
+.primary,.download { background:var(--accent); color:#12281d; }
+.secondary { background:#1b2533; border-color:#38465a; color:#e9eef6; }
+#new-project { width:100%; text-align:left; margin-bottom:28px; }
+#projects { display:grid; gap:8px; margin-top:12px; }
+.project-link { display:block; padding:11px 12px; color:inherit; text-decoration:none; border-radius:8px; border:1px solid transparent; overflow-wrap:anywhere; }
+.project-link:hover,.project-link[aria-current="page"] { background:#1a2634; border-color:#344a40; }
+.project-link strong { display:block; font-size:13px; font-weight:550; }
+.project-link small { color:var(--muted); font-size:11px; }
+.empty { color:var(--muted); font-size:13px; }
+main { width:100%; max-width:1220px; margin:0 auto; padding:35px 44px 70px; align-self:start; }
+.topbar { display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid var(--line); padding-bottom:20px; margin-bottom:38px; }
+.badge { display:inline-flex; align-items:center; gap:8px; color:#b5c2d3; font-size:12px; }
+.dot { width:7px; height:7px; background:var(--accent); border-radius:50%; }
+h1 { font-size:clamp(28px,4vw,42px); line-height:1.2; letter-spacing:-.035em; font-weight:650; margin:8px 0 16px; overflow-wrap:anywhere; }
+h2 { font-size:17px; margin:0 0 16px; font-weight:650; }
+h3 { font-size:14px; margin:0 0 5px; }
+p { margin:0 0 18px; }
+.intro { color:var(--muted); max-width:630px; margin-bottom:30px; }
+.layout { display:grid; grid-template-columns:minmax(0,1fr) 260px; gap:24px; align-items:start; }
+.panel { background:#131c28; border:1px solid var(--line); border-radius:14px; padding:25px; }
+form { display:grid; gap:14px; }
+label { font-weight:600; }
+.hint { color:var(--muted); font-size:12px; }
+textarea { width:100%; min-height:180px; resize:vertical; border:1px solid #3a485c; border-radius:8px; background:#0e1621; color:inherit; padding:14px; }
+input[type=file] { width:100%; border:1px dashed #42536b; padding:17px; border-radius:8px; color:var(--muted); }
+input::file-selector-button { background:#26354a; border:0; border-radius:5px; color:#e9eef6; padding:7px 10px; margin-right:12px; cursor:pointer; }
+#submit { justify-self:start; margin-top:8px; }
+.steps { padding:0; margin:0; list-style:none; }
+.steps li { display:flex; gap:12px; align-items:flex-start; padding-bottom:23px; position:relative; }
+.steps li:last-child { padding-bottom:0; }
+.steps li:not(:last-child):before { content:''; position:absolute; left:13px; top:29px; bottom:5px; width:1px; background:#354155; }
+.step-number { display:grid; place-items:center; width:28px; height:28px; flex-shrink:0; border:1px solid #425169; border-radius:50%; font-size:11px; color:var(--muted); }
+.steps small { display:block; color:var(--muted); font-size:11px; margin-top:3px; }
+.steps strong { font-size:12px; font-weight:550; }
+.steps .active .step-number,.steps .complete .step-number { background:#223c30; border-color:#6aa281; color:var(--accent); }
+.steps .active strong { color:var(--accent); }
+.thumbnails { display:flex; flex-wrap:wrap; gap:10px; }
+figure { margin:0; width:85px; }
+figure img { width:85px; height:70px; object-fit:cover; border-radius:7px; border:1px solid #38465a; }
+figcaption { font-size:10px; color:var(--muted); margin-top:4px; }
+#notice { margin:20px 0; padding:13px 16px; border:1px solid #42536b; border-radius:8px; background:#152232; white-space:pre-wrap; }
+#notice:empty { display:none; }
+.project-story { white-space:pre-wrap; color:#b8c5d6; overflow-wrap:anywhere; }
+#project-status { font-size:14px; color:var(--accent); margin-bottom:14px; }
+.actions { display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-top:20px; }
+#film { display:block; width:100%; max-height:440px; border-radius:9px; background:#080b10; margin:15px 0; }
+#shots-section { margin-top:24px; }
+#shots { display:grid; gap:10px; }
+details { border:1px solid var(--line); border-radius:9px; padding:14px 16px; background:#101925; }
+summary { cursor:pointer; font-size:13px; font-weight:550; }
+.shot-action { color:var(--muted); font-size:13px; margin:12px 0; }
+.shot-prompt { white-space:pre-wrap; color:#c3cfde; font-size:13px; line-height:1.7; }
+.clip { display:inline-block; margin-top:12px; font-size:12px; }
+#project-output h2 { margin-top:24px; }
+#log { font-size:12px; }
+@media(max-width:1100px) { main { padding:25px; } .layout { grid-template-columns:minmax(0,1fr); } .workflow { order:2; } }
+@media(max-width:650px) { .shell { grid-template-columns:1fr; } aside { border-right:0; border-bottom:1px solid var(--line); padding:18px; } .brand { margin-bottom:15px; } #new-project { width:auto; margin-bottom:15px; } #projects { display:flex; overflow-x:auto; } .project-link { min-width:160px; max-width:200px; } .sidebar-label { display:none; } main { padding:20px 16px 45px; } .topbar { margin-bottom:25px; } .panel { padding:19px; } .badge { font-size:11px; } }
+</style>
+</head>
+<body>
+<div class="shell">
+<aside aria-label="Projecten">
+  <div class="brand"><span class="mark" aria-hidden="true">H3</span> Video Studio</div>
+  <button id="new-project" class="secondary" type="button">＋ Nieuw project</button>
+  <div class="eyebrow sidebar-label">Jouw projecten</div>
+  <nav id="projects" aria-label="Opgeslagen projecten"><p class="empty">Je projecten verschijnen hier.</p></nav>
+</aside>
+<main>
+  <div class="topbar"><span class="eyebrow">Van idee naar film</span><span class="badge"><span class="dot" aria-hidden="true"></span> Eigen Studio · MiniMax H3</span></div>
+  <div class="eyebrow" id="page-label">Nieuw project</div>
+  <h1 id="heading">Welk verhaal wil je maken?</h1>
+  <p class="intro" id="intro">Een kort shotidee of verhaal is genoeg. Voeg je beelden toe. Studio plant de shots, schrijft de prompts en maakt er een film van.</p>
+  <div id="notice" role="status" aria-live="polite"></div>
+  <div class="layout">
+    <div>
+      <section class="panel" id="input-panel" aria-label="Nieuw videoproject">
+        <form id="create-form">
+          <label for="story">Shotidee of verhaal</label>
+          <textarea id="story" required maxlength="20000" placeholder="Bijvoorbeeld: een vrouw opent haar café aan zee. Ze zet koffie, ontdekt een brief en kijkt naar buiten…"></textarea>
+          <label for="images">Referentiebeelden</label>
+          <span class="hint" id="limits">Personages, locaties of voorwerpen. 1–9 beelden van maximaal 8 MiB per beeld.</span>
+          <input id="images" type="file" multiple required accept="image/png,image/jpeg,image/webp" aria-describedby="limits">
+          <div class="thumbnails" id="previews"></div>
+          <span class="hint">Studio maakt vijf opeenvolgende shots. De losse clips blijven beschikbaar.</span>
+          <button id="submit" class="primary">Maak mijn film <span aria-hidden="true">↗</span></button>
+        </form>
+      </section>
+      <section class="panel" id="project-panel" hidden aria-label="Videoproject">
+        <p id="project-status" role="status" aria-live="polite"></p>
+        <h2>Jouw verhaal</h2>
+        <p class="project-story" id="saved-story"></p>
+        <div class="thumbnails" id="saved-images"></div>
+        <div id="project-output" hidden>
+          <h2>Je film is klaar</h2>
+          <video id="film" controls preload="metadata" aria-label="Voltooide film"></video>
+          <a class="download" id="download" download="film.mp4">Download MP4</a>
+        </div>
+        <div class="actions">
+          <button id="resume" class="secondary" type="button" hidden>Hervat verwerking</button>
+          <a id="log" target="_blank" rel="noopener" hidden>Productielog openen</a>
+        </div>
+      </section>
+      <section id="shots-section" hidden>
+        <h2>Shots &amp; geschreven prompts</h2>
+        <div id="shots"></div>
+      </section>
+    </div>
+    <section class="panel workflow" aria-label="Productiestappen">
+      <h2>Zo maakt Studio je film</h2>
+      <ol class="steps">
+        <li data-stage="input"><span class="step-number">1</span><div><strong>Jouw idee &amp; beelden</strong><small>Het begin van je verhaal</small></div></li>
+        <li data-stage="planning"><span class="step-number">2</span><div><strong>Story &amp; Shot Planner</strong><small>Vijf samenhangende scènes</small></div></li>
+        <li data-stage="writing"><span class="step-number">3</span><div><strong>Studio Writer</strong><small>Beweging, camera en geluid</small></div></li>
+        <li data-stage="rendering"><span class="step-number">4</span><div><strong>Video genereren</strong><small>Continuïteit tussen de shots</small></div></li>
+        <li data-stage="exporting"><span class="step-number">5</span><div><strong>Complete MP4</strong><small>Jouw film en losse clips</small></div></li>
+      </ol>
+    </section>
+  </div>
+</main>
+</div>
+<script>
+const $ = selector => document.querySelector(selector);
+const state = { id:null, generation:0, timer:null, previewUrls:[], shotSignature:null, referenceId:null };
+const stages = ['input','planning','writing','rendering','exporting'];
+const labels = {
+  queued:'Je project staat in de wachtrij.', preparing:'De GPU-host bereidt de modellen voor. Dit kan bij de eerste start langer duren.',
+  planning:'Studio werkt je idee uit tot vijf samenhangende shots.', writing:'Studio Writer schrijft de volledige H3-prompt voor elk shot.',
+  references:'Studio koppelt je referentiebeelden aan de shots.', rendering:'Studio genereert je videoclips.',
+  exporting:'Studio haalt de clips op en voegt ze samen.', done:'Je film is klaar.', failed:'De productie is onderbroken.'
+};
+const statusLabels = {queued:'In de wachtrij',running:'In productie',done:'Voltooid',failed:'Onderbroken'};
+
+async function api(path, options) {
+  const response = await fetch(path, options);
+  const result = await response.json();
+  if (!response.ok) throw new Error(result.error || 'Studio kon de aanvraag niet verwerken.');
+  return result;
+}
+function post(path, body={}) {
+  return api(path, {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+}
+function thumbnail(source, caption) {
+  const figure = document.createElement('figure');
+  const image = document.createElement('img');
+  image.src = source;
+  image.alt = caption;
+  const label = document.createElement('figcaption');
+  label.textContent = caption;
+  figure.append(image,label);
+  return figure;
+}
+function pipeline(stage) {
+  let index = stages.indexOf(stage);
+  if (stage === 'references') index = 2;
+  if (stage === 'done') index = 5;
+  if (['queued','preparing'].includes(stage)) index = 0;
+  document.querySelectorAll('.steps li').forEach((step,i) => {
+    step.classList.toggle('active', i === index);
+    step.classList.toggle('complete', i < index);
+    if (i === index) step.setAttribute('aria-current','step');
+    else step.removeAttribute('aria-current');
+  });
+}
+async function listProjects() {
+  try {
+    const result = await api('/projects');
+    const nav = $('#projects');
+    nav.replaceChildren();
+    if (!result.projects.length) {
+      const empty = document.createElement('p');
+      empty.className = 'empty';
+      empty.textContent = 'Je projecten verschijnen hier.';
+      nav.append(empty);
+    }
+    result.projects.forEach(project => {
+      const link = document.createElement('a');
+      link.className = 'project-link';
+      link.href = '#' + project.id;
+      if (project.id === state.id) link.setAttribute('aria-current','page');
+      const title = document.createElement('strong');
+      title.textContent = project.title || 'Videoproject';
+      const status = document.createElement('small');
+      status.textContent = statusLabels[project.status] || project.status;
+      link.append(title,status);
+      nav.append(link);
+    });
+  } catch (error) { $('#notice').textContent = error.message; }
+}
+function showProject(project) {
+  $('#heading').textContent = project.title || 'Jouw videoproject';
+  $('#saved-story').textContent = project.story;
+  const base = '/projects/' + project.id;
+  const stage = project.status === 'done' ? 'done' : project.progress.stage;
+  const count = project.progress.completed;
+  $('#project-status').textContent = labels[stage] || statusLabels[project.status];
+  if (stage === 'rendering' && count > 0) $('#project-status').textContent += ' ' + count + ' van 5 shots gereed.';
+  $('#notice').textContent = project.status === 'failed' ? (project.progress.error || labels.failed) : '';
+  $('#resume').hidden = project.status !== 'failed';
+  $('#log').hidden = project.status !== 'failed';
+  $('#log').href = base + '/render.log';
+  $('#project-output').hidden = project.status !== 'done';
+  if (project.status === 'done' && $('#film').getAttribute('src') !== base + '/film.mp4') {
+    $('#film').src = base + '/film.mp4';
+    $('#download').href = base + '/film.mp4';
+  }
+  pipeline(stage);
+  if (state.referenceId !== project.id) {
+    $('#saved-images').replaceChildren(...project.references.map((name,i) => thumbnail(base + '/' + name,'Referentie ' + (i+1))));
+    state.referenceId = project.id;
+  }
+  const signature = JSON.stringify([project.id,project.shots,project.clips]);
+  if (signature === state.shotSignature) return;
+  state.shotSignature = signature;
+  $('#shots-section').hidden = !project.shots.length;
+  $('#shots').replaceChildren();
+  project.shots.forEach((shot,i) => {
+    const detail = document.createElement('details');
+    const summary = document.createElement('summary');
+    summary.textContent = 'Shot ' + (i+1) + ' · ' + shot.action;
+    const description = document.createElement('p');
+    description.className = 'shot-action';
+    description.textContent = shot.camera + ' · ' + shot.sound;
+    const prompt = document.createElement('p');
+    prompt.className = 'shot-prompt';
+    prompt.textContent = shot.prompt;
+    detail.append(summary,description,prompt);
+    const filename = 'shot-' + String(i+1).padStart(2,'0') + '.mp4';
+    if (project.clips.includes(filename)) {
+      const clip = document.createElement('a');
+      clip.className = 'clip';
+      clip.href = base + '/clips/' + filename;
+      clip.download = filename;
+      clip.textContent = 'Download shot ' + (i+1);
+      detail.append(clip);
+    }
+    $('#shots').append(detail);
+  });
+}
+async function poll(id, generation) {
+  try {
+    const project = await api('/projects/' + id);
+    if (generation !== state.generation) return;
+    showProject(project);
+    await listProjects();
+    if (generation !== state.generation) return;
+    if (!['done','failed'].includes(project.status)) state.timer = setTimeout(() => poll(id,generation),3000);
+  } catch (error) {
+    if (generation !== state.generation) return;
+    $('#notice').textContent = error.message + ' Studio probeert opnieuw verbinding te maken.';
+    state.timer = setTimeout(() => poll(id,generation),5000);
+  }
+}
+function navigate() {
+  clearTimeout(state.timer);
+  state.generation++;
+  state.id = /^[a-f0-9]{32}$/.test(location.hash.slice(1)) ? location.hash.slice(1) : null;
+  $('#notice').textContent = '';
+  $('#film').pause();
+  $('#film').removeAttribute('src');
+  $('#film').load();
+  $('#input-panel').hidden = Boolean(state.id);
+  $('#project-panel').hidden = !state.id;
+  $('#intro').hidden = Boolean(state.id);
+  $('#shots-section').hidden = true;
+  $('#project-output').hidden = true;
+  $('#resume').hidden = true;
+  $('#log').hidden = true;
+  $('#page-label').textContent = state.id ? 'Jouw project' : 'Nieuw project';
+  $('#heading').textContent = state.id ? 'Project openen…' : 'Welk verhaal wil je maken?';
+  state.referenceId = null;
+  state.shotSignature = null;
+  pipeline('input');
+  listProjects();
+  if (state.id) poll(state.id,state.generation);
+}
+function encode(file) {
+  return new Promise((resolve,reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result.split(',')[1]);
+    reader.onerror = () => reject(new Error('Een referentiebeeld kon niet worden gelezen.'));
+    reader.readAsDataURL(file);
+  });
+}
+$('#images').addEventListener('change', () => {
+  state.previewUrls.forEach(url => URL.revokeObjectURL(url));
+  state.previewUrls = [...$('#images').files].map(file => URL.createObjectURL(file));
+  $('#previews').replaceChildren(...state.previewUrls.map((url,i) => thumbnail(url,'Referentie ' + (i+1))));
+});
+$('#create-form').addEventListener('submit',async event => {
+  event.preventDefault();
+  const files = [...$('#images').files];
+  if (!files.length || files.length > 9 || files.some(file => file.size > 8*1024*1024)) {
+    $('#notice').textContent = 'Kies één tot negen beelden van maximaal 8 MiB per beeld.';
+    return;
+  }
+  $('#submit').disabled = true;
+  $('#notice').textContent = 'Je verhaal en referentiebeelden uploaden…';
+  try {
+    const result = await post('/projects',{story:$('#story').value,images:await Promise.all(files.map(encode))});
+    location.hash = result.id;
+  } catch (error) { $('#notice').textContent = error.message; }
+  finally { $('#submit').disabled = false; }
+});
+$('#new-project').addEventListener('click',() => {
+  $('#create-form').reset();
+  state.previewUrls.forEach(url => URL.revokeObjectURL(url));
+  state.previewUrls = [];
+  $('#previews').replaceChildren();
+  if (location.hash) location.hash = '';
+  else navigate();
+});
+$('#resume').addEventListener('click',async () => {
+  $('#resume').disabled = true;
+  const id = state.id;
+  try {
+    await post('/projects/' + id + '/resume');
+    if (state.id === id) navigate();
+  } catch (error) { $('#notice').textContent = error.message; }
+  finally { $('#resume').disabled = false; }
+});
+window.addEventListener('hashchange',navigate);
+navigate();
+</script>
+</body>
+</html>

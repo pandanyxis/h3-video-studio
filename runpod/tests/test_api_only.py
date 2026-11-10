@@ -27,7 +27,7 @@ class ApiOnlyTests(unittest.TestCase):
             with patch.object(template, 'ROOT', path):
                 result = template.make()
         self.assertNotIn('3000/http', result['ports'])
-        self.assertIn('8080/http', result['ports'])
+        self.assertEqual(result['ports'], ['22/tcp'])
         self.assertFalse(any(k == 'ENABLE_WEBUI' or k.startswith('WEBUI_') for k in result['env']))
         self.assertEqual(result['env']['LLAMA_API_KEY'], 'retained-api-key')
         self.assertEqual(result['env']['CTX_SIZE'], '32768')
