@@ -1,8 +1,8 @@
 # H3 Video Studio
 
-Voer een verhaal en één tot negen referentiebeelden in. Studio maakt vijf samenhangende shots met MiniMax H3 en exporteert ze als één MP4. De browserinterface staat in `studio.html` en de projectservice in `studio_web.py`.
+Voer een verhaal en één tot negen referentiebeelden in. Studio maakt samenhangende shots met MiniMax H3 en exporteert ze als één MP4. De browserinterface staat in `studio.html` en de projectservice in `studio_web.py`.
 
-Je voert een shotidee of verhaal in. De eigen Studio-planner werkt dit met Qwen uit tot vijf shots. Daarna schrijft de eigen Studio Writer in een aparte stap de volledige H3-prompt per shot, inclusief beweging, camera, geluid en begin- en eindstand. Beide stappen staan in `studio_writer.py` en gebruiken de lokale Qwen-server. ComfyUI met de H3 Continuity-renderlaag rendert de clips op de GPU. Runpod levert de GPU, opslag en SSH-toegang. Zie [het modelprofiel](runpod/RUNPOD-MODELS.md) voor de modellen.
+Je voert een shotidee of verhaal in. De eigen Studio-planner bepaalt met Qwen hoeveel shots het verhaal nodig heeft, van één tot twintig. Hij kiest per shot een passende lengte. MiniMax H3 rondt af op zijn eigen framestappen, met maximaal tien seconden per clip. Daarna schrijft de eigen Studio Writer in een aparte stap de volledige H3-prompt per shot, inclusief beweging, camera, geluid en begin- en eindstand. Beide stappen staan in `studio_writer.py` en gebruiken de lokale Qwen-server. ComfyUI met de H3 Continuity-renderlaag rendert de clips op de GPU. Runpod levert de GPU, opslag en SSH-toegang. Zie [het modelprofiel](runpod/RUNPOD-MODELS.md) voor de modellen.
 
 ## GPU-host starten
 
@@ -28,16 +28,24 @@ Voeg een verhaal en referentiebeelden toe en klik op **Maak mijn film**. De proj
 python /opt/studio/run_studio.py verhaal.txt /workspace/studio/projects/proef referentie-a.png
 ```
 
-De projectmap bevat het shotplan, de tijdlijn, de render-ID, vijf clips en `film.mp4`. Browserprojecten bewaren ook de invoer en `render.log`. Herhaal het CLI-commando met dezelfde projectmap om een bestaande render op te vragen en de export af te maken. Gebruik voor een nieuw verhaal een nieuwe projectmap.
+De projectmap bevat het shotplan, de tijdlijn, de render-ID, de losse clips en `film.mp4`. Browserprojecten bewaren ook de invoer en `render.log`. Herhaal het CLI-commando met dezelfde projectmap om een bestaande render op te vragen en de export af te maken. Gebruik voor een nieuw verhaal een nieuwe projectmap.
 
-## Interface lokaal bekijken
+## Studio op je pc gebruiken
 
 ```sh
 python -m pip install -r requirements.txt
 python studio_web.py --projects ./projects
 ```
 
-Open http://localhost:8190. De productie-worker vereist de Linux GPU-host met Qwen, ComfyUI en ffmpeg. Lokale projecten blijven gescheiden van de projecten op de GPU-host.
+Open http://localhost:8190. Je projecten staan op je pc. Voor productie heeft Studio Qwen en ComfyUI op de GPU-host nodig en moet `ffmpeg` op je pc op `PATH` staan.
+
+Gebruik voor deze opstelling een Pod met `ENABLE_STUDIO=false`. Open de verbinding met de GPU-diensten en stel `LLAMA_API_KEY` op je pc in op dezelfde sleutel als op de Pod.
+
+```sh
+ssh -N -L 8080:127.0.0.1:8080 -L 8188:127.0.0.1:8188 -p SSH_PORT root@POD_IP
+```
+
+Studio kan je project opslaan terwijl de GPU-host opstart.
 
 ## Controles
 

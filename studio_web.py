@@ -18,6 +18,7 @@ import warnings
 
 from PIL import Image, UnidentifiedImageError
 
+from prepare_timeline import FPS
 from studio_storage import atomic_json, progress, read_json
 
 ROOT = Path(os.environ.get("STUDIO_PROJECTS", "/workspace/studio/projects"))
@@ -83,6 +84,11 @@ def project_data(project, details=False):
         result["clips"] = [path.name for path in sorted((project / "clips").glob("shot-*.mp4"))]
         shot_file = project / "shots.json"
         result["shots"] = read_json(shot_file)["shots"] if shot_file.is_file() else []
+        timeline = project / "timeline.json"
+        if timeline.is_file():
+            boxes = read_json(timeline)["timeline"]["boxes"]
+            for shot, box in zip(result["shots"], boxes):
+                shot["duration_seconds"] = box["frames"] / FPS
     return result
 
 

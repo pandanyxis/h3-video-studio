@@ -3,14 +3,24 @@ import argparse
 import json
 from pathlib import Path
 
-from plan_story import validate_plan
+from plan_story import MAX_SHOT_SECONDS, validate_plan
+
+FPS = 24
+FRAME_GRID = 17
+
+
+def shot_frames(duration, fresh):
+    """Pick a native H3 length that stays within the clip duration cap."""
+    if duration is None:
+        return 90 if fresh else 68
+    offset = 5 if fresh else 0
+    steps = max(1, round((duration * FPS - offset) / FRAME_GRID))
+    limit = (MAX_SHOT_SECONDS * FPS - offset) // FRAME_GRID
+    return min(steps, limit) * FRAME_GRID + offset
 
 
 def timeline_document(plan, name, profile):
-    count = len(plan["shots"])
-    if count not in (5, 10, 20):
-        raise ValueError("Expected 5, 10 or 20 shots")
-    shots = validate_plan(plan, count)
+    shots = validate_plan(plan)
     boxes = []
     for index, shot in enumerate(shots, 1):
         prompt = "\n".join((
@@ -20,16 +30,23 @@ def timeline_document(plan, name, profile):
             f"Sound: {shot['sound']}",
             f"Closing state: {shot['end']}",
         ))
+        cut = shot.get("cut", False)
         boxes.append({
             "id": f"shot-{index:02d}",
-            "frames": 90 if index == 1 else 68,
+            "frames": shot_frames(shot.get("duration_seconds"), fresh=index == 1 or cut),
+            "cut": cut,
             "seed": 40 + index,
             "prompt": prompt,
         })
+    # Continuation after a scene's first shot needs enough frames to carry forward.
+    fresh_lengths = [box["frames"] for index, box in enumerate(boxes[:-1])
+                     if (index == 0 or box["cut"]) and not boxes[index + 1]["cut"]]
+    context_limit = min(fresh_lengths, default=90)
+    context = max(value for value in (22, 39, 90) if value <= context_limit)
     return {
         "name": name,
         "profile": profile,
-        "settings": {"width": 768, "height": 448, "context_frames": 90,
+        "settings": {"width": 768, "height": 448, "context_frames": context,
                      "carry_audio": True, "ref_image_size": "match"},
         "timeline": {"version": 1, "boxes": boxes},
         "assets": [],

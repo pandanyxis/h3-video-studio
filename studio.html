@@ -104,7 +104,7 @@ summary { cursor:pointer; font-size:13px; font-weight:550; }
           <span class="hint" id="limits">Personages, locaties of voorwerpen. 1–9 beelden van maximaal 8 MiB per beeld.</span>
           <input id="images" type="file" multiple required accept="image/png,image/jpeg,image/webp" aria-describedby="limits">
           <div class="thumbnails" id="previews"></div>
-          <span class="hint">Studio maakt vijf opeenvolgende shots. De losse clips blijven beschikbaar.</span>
+          <span class="hint">Je verhaal bepaalt het aantal shots. Elke clip duurt maximaal 10 seconden.</span>
           <button id="submit" class="primary">Maak mijn film <span aria-hidden="true">↗</span></button>
         </form>
       </section>
@@ -132,7 +132,7 @@ summary { cursor:pointer; font-size:13px; font-weight:550; }
       <h2>Zo maakt Studio je film</h2>
       <ol class="steps">
         <li data-stage="input"><span class="step-number">1</span><div><strong>Jouw idee &amp; beelden</strong><small>Het begin van je verhaal</small></div></li>
-        <li data-stage="planning"><span class="step-number">2</span><div><strong>Story &amp; Shot Planner</strong><small>Vijf samenhangende scènes</small></div></li>
+        <li data-stage="planning"><span class="step-number">2</span><div><strong>Story &amp; Shot Planner</strong><small>Aantal en lengte volgen je verhaal</small></div></li>
         <li data-stage="writing"><span class="step-number">3</span><div><strong>Studio Writer</strong><small>Beweging, camera en geluid</small></div></li>
         <li data-stage="rendering"><span class="step-number">4</span><div><strong>Video genereren</strong><small>Continuïteit tussen de shots</small></div></li>
         <li data-stage="exporting"><span class="step-number">5</span><div><strong>Complete MP4</strong><small>Jouw film en losse clips</small></div></li>
@@ -146,8 +146,8 @@ const $ = selector => document.querySelector(selector);
 const state = { id:null, generation:0, timer:null, previewUrls:[], shotSignature:null, referenceId:null };
 const stages = ['input','planning','writing','rendering','exporting'];
 const labels = {
-  queued:'Je project staat in de wachtrij.', preparing:'De GPU-host bereidt de modellen voor. Dit kan bij de eerste start langer duren.',
-  planning:'Studio werkt je idee uit tot vijf samenhangende shots.', writing:'Studio Writer schrijft de volledige H3-prompt voor elk shot.',
+  queued:'Je project staat in de wachtrij.', preparing:'Studio wacht op de GPU-host en de modellen. Controleer de SSH-verbinding als Studio op je pc draait.',
+  planning:'Studio kiest het aantal en de lengte van de shots die je verhaal nodig heeft.', writing:'Studio Writer schrijft de volledige H3-prompt voor elk shot.',
   references:'Studio koppelt je referentiebeelden aan de shots.', rendering:'Studio genereert je videoclips.',
   exporting:'Studio haalt de clips op en voegt ze samen.', done:'Je film is klaar.', failed:'De productie is onderbroken.'
 };
@@ -214,9 +214,11 @@ function showProject(project) {
   $('#saved-story').textContent = project.story;
   const base = '/projects/' + project.id;
   const stage = project.status === 'done' ? 'done' : project.progress.stage;
-  const count = project.progress.completed;
+  const count = project.progress.completed || 0;
+  const total = project.progress.total || project.shots.length;
   $('#project-status').textContent = labels[stage] || statusLabels[project.status];
-  if (stage === 'rendering' && count > 0) $('#project-status').textContent += ' ' + count + ' van 5 shots gereed.';
+  if (stage === 'rendering' && total) $('#project-status').textContent += ' ' + count + ' van ' + total + ' gereed.';
+  if (stage === 'writing' && total) $('#project-status').textContent += ' ' + total + (total === 1 ? ' shot gepland.' : ' shots gepland.');
   $('#notice').textContent = project.status === 'failed' ? (project.progress.error || labels.failed) : '';
   $('#resume').hidden = project.status !== 'failed';
   $('#log').hidden = project.status !== 'failed';
@@ -239,7 +241,9 @@ function showProject(project) {
   project.shots.forEach((shot,i) => {
     const detail = document.createElement('details');
     const summary = document.createElement('summary');
-    summary.textContent = 'Shot ' + (i+1) + ' · ' + shot.action;
+    const length = Number.isFinite(shot.duration_seconds)
+      ? ' · ' + new Intl.NumberFormat('nl-NL',{maximumFractionDigits:1}).format(shot.duration_seconds) + ' s' : '';
+    summary.textContent = 'Shot ' + (i+1) + length + ' · ' + shot.action;
     const description = document.createElement('p');
     description.className = 'shot-action';
     description.textContent = shot.camera + ' · ' + shot.sound;

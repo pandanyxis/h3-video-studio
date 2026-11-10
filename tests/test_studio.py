@@ -17,7 +17,8 @@ from PIL import Image
 
 import run_studio
 from studio_render import RenderClient, RenderError
-from studio_storage import atomic_json, read_json
+from studio_storage import read_json
+from prepare_timeline import timeline_document
 import studio_web as web
 import studio_writer as writer
 
@@ -28,12 +29,29 @@ def image_data():
     return base64.b64encode(buffer.getvalue()).decode()
 
 
-def shot_plan():
+def shot_plan(count=5):
     return {"shots": [{"action": "A boat drifts", "camera": "Wide shot", "sound": "Water",
-                       "start": "Boat left", "end": "Boat right"} for _ in range(5)]}
+                       "start": "Boat left", "end": "Boat right", "duration_seconds": 3} for _ in range(count)]}
 
 
 class WriterTests(unittest.TestCase):
+    def test_simple_and_complex_ideas_keep_the_planners_count(self):
+        for count in (1, 7):
+            with self.subTest(count=count):
+                plan = shot_plan(count)
+                prompts = {"prompts": ["@image17 boat"] * count}
+                with patch.object(writer, "ask_qwen", side_effect=[plan, prompts]) as call:
+                    result = writer.plan_and_write("Een boot", [("image17", None)])
+                self.assertEqual(len(result["shots"]), count)
+                self.assertIn(f"exactly {count} nonempty strings", call.call_args.args[0])
+
+    def test_rejects_duration_over_ten_seconds(self):
+        plan = shot_plan(1)
+        plan["shots"][0]["duration_seconds"] = 11
+        with patch.object(writer, "ask_qwen", return_value=plan):
+            with self.assertRaisesRegex(ValueError, "duration from 1 to 10"):
+                writer.plan_and_write("Een boot", [("image17", None)])
+
     def test_writer_failure_reuses_saved_plan_and_rejects_unknown_references(self):
         with tempfile.TemporaryDirectory() as folder:
             project = Path(folder)
@@ -48,6 +66,32 @@ class WriterTests(unittest.TestCase):
             with patch.object(writer, "ask_qwen", return_value={"prompts": ["@image17 boat"] * 5}):
                 result = writer.plan_and_write("Een boot", [("image17", None)], project)
                 self.assertTrue(all(shot["prompt"] for shot in result["shots"]))
+
+
+class TimelineTests(unittest.TestCase):
+    def test_native_frame_lengths_are_variable_and_capped(self):
+        plan = shot_plan(4)
+        plan["shots"][0]["duration_seconds"] = 10
+        plan["shots"][1]["duration_seconds"] = 1
+        plan["shots"][2]["duration_seconds"] = 10
+        plan["shots"][3].update(duration_seconds=10, cut=True)
+        boxes = timeline_document(plan, "test", "studio-turbo8")["timeline"]["boxes"]
+        self.assertEqual([box["frames"] for box in boxes], [226, 17, 238, 226])
+        self.assertTrue(boxes[-1]["cut"])
+
+    def test_short_opening_can_continue_into_next_shot(self):
+        plan = shot_plan(2)
+        plan["shots"][0]["duration_seconds"] = 1
+        document = timeline_document(plan, "test", "studio-turbo8")
+        self.assertEqual(document["timeline"]["boxes"][0]["frames"], 22)
+        self.assertEqual(document["settings"]["context_frames"], 22)
+
+    def test_previous_plans_keep_their_default_timing(self):
+        plan = shot_plan()
+        for shot in plan["shots"]:
+            del shot["duration_seconds"]
+        boxes = timeline_document(plan, "test", "studio-turbo8")["timeline"]["boxes"]
+        self.assertEqual([box["frames"] for box in boxes], [90, 68, 68, 68, 68])
 
 
 class WebTests(unittest.TestCase):
@@ -91,14 +135,17 @@ class WebTests(unittest.TestCase):
         with self.assertRaises(HTTPError) as error:
             self.post("/projects/" + identifier + "/resume", {})
         self.assertEqual(error.exception.code, 409)
+        error.exception.close()
 
     def test_rejects_cross_origin_and_corrupt_images_without_leaving_project(self):
         with self.assertRaises(HTTPError) as error:
             self.post("/projects", {}, origin="http://example.com")
         self.assertEqual(error.exception.code, 403)
+        error.exception.close()
         with self.assertRaises(HTTPError) as error:
             self.post("/projects", {"story": "Een boot", "images": [base64.b64encode(b"not a picture").decode()]})
         self.assertEqual(error.exception.code, 400)
+        error.exception.close()
         self.assertEqual(list(web.ROOT.iterdir()), [])
 
     def test_retry_cannot_enqueue_same_project_twice(self):
@@ -120,7 +167,7 @@ class ProductionTests(unittest.TestCase):
             story.write_text("Een boot")
             image = project / "reference-01.png"
             image.write_bytes(base64.b64decode(image_data()))
-            plan = shot_plan()
+            plan = shot_plan(7)
             for shot in plan["shots"]:
                 shot["prompt"] = "@image17 boat moves"
             client = unittest.mock.MagicMock()
@@ -129,13 +176,19 @@ class ProductionTests(unittest.TestCase):
             client.create.return_value = {"id": "project", "revision": 1}
             client.plan.return_value = {"plan_sha256": "hash"}
             client.render.side_effect = [OSError("response lost"), {"id": "job"}]
-            client.wait.return_value = {"artifacts": [{"kind": "box", "unit_id": f"box:shot-{i:02d}"} for i in range(1,6)]}
+            client.wait.return_value = {"artifacts": [{"kind": "box", "unit_id": f"box:shot-{i:02d}"} for i in range(1,8)]}
             client.download.side_effect = lambda artifact, target: target.write_bytes(b"clip")
             args = SimpleNamespace(project=project, story=story, references=[image], profile="studio-turbo8", resume=False)
             def export(root, target):
-                self.assertEqual(len(list((root / "clips").glob("*.mp4"))), 5)
+                self.assertEqual(len(list((root / "clips").glob("*.mp4"))), 7)
                 target.write_bytes(b"movie")
-            with patch.object(run_studio, "RenderClient", return_value=client), patch.object(run_studio, "plan_and_write", return_value=plan) as planner, patch.object(run_studio.time, "sleep"), patch.object(run_studio, "export_project", side_effect=export):
+            with (
+                patch.object(run_studio, "RenderClient", return_value=client),
+                patch.object(run_studio, "qwen_ready", return_value=True),
+                patch.object(run_studio, "plan_and_write", return_value=plan) as planner,
+                patch.object(run_studio.time, "sleep"),
+                patch.object(run_studio, "export_project", side_effect=export),
+            ):
                 with self.assertRaises(OSError):
                     run_studio.produce(args)
                 saved_key = read_json(project / "production.json")["key"]

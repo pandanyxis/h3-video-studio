@@ -28,4 +28,4 @@ De runtime genereert standaard een Qwen-sleutel en bewaart die privé op `/works
 
 ## GPU-proef
 
-Open Studio, geef een kort verhaal met één referentiebeeld en start een film. Controleer of het project vijf prompts en vijf losse clips bevat en of de MP4 afspeelt. Stop een testpod na afloop om GPU-kosten te beperken.
+Open Studio, geef een kort verhaal met één referentiebeeld en start een film. Controleer of het project per gepland shot één prompt en één losse clip bevat en of de MP4 afspeelt. Controleer ook of de clips binnen tien seconden blijven. Stop een testpod na afloop om GPU-kosten te beperken.

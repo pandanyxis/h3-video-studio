@@ -8,6 +8,10 @@ permissions:
   contents: read
   packages: write
 
+concurrency:
+  group: studio-image-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   publish:
     runs-on: ubuntu-latest
@@ -35,6 +39,8 @@ jobs:
           file: runpod/Dockerfile
           push: true
           platforms: linux/amd64
+          cache-from: type=gha,scope=studio-runtime
+          cache-to: type=gha,scope=studio-runtime,mode=max,ignore-error=true
           tags: |
             ghcr.io/pandanyxis/h3-video-studio:latest
             ghcr.io/pandanyxis/h3-video-studio:${{ github.sha }}

@@ -1,6 +1,5 @@
-"""Produce five connected shots and a complete film on the Studio GPU host."""
+"""Produce the planned shots and a complete film on the Studio GPU host."""
 import argparse
-import json
 import mimetypes
 import time
 import uuid
@@ -9,18 +8,18 @@ from pathlib import Path
 from export_project import export_project
 from prepare_timeline import timeline_document
 from studio_render import RenderClient, RenderError
-from studio_storage import atomic_json, progress, read_json
-from studio_writer import plan_and_write
+from studio_storage import atomic_json, gpu_lock, progress, read_json
+from studio_writer import plan_and_write, qwen_ready
 
 
-def wait_for_models(client, project, profile_id):
+def wait_for_models(client, project, profile_id, *, needs_qwen):
     progress(project, "preparing")
     until = time.monotonic() + 90 * 60
     while True:
         try:
             profiles = client.capabilities()["profiles"]
             profile = next((item for item in profiles if item["id"] == profile_id), {})
-            if profile.get("ready"):
+            if profile.get("ready") and (not needs_qwen or qwen_ready()):
                 return
         except (OSError, ValueError, RenderError):
             pass
@@ -39,8 +38,9 @@ def produce(args):
         progress(project, "done")
         return film
     client = RenderClient()
-    wait_for_models(client, project, args.profile)
     receipt = project / "production.json"
+    plan_file = project / "shots.json"
+    wait_for_models(client, project, args.profile, needs_qwen=not (receipt.exists() or plan_file.exists()))
     if receipt.exists():
         state = read_json(receipt)
     else:
@@ -48,7 +48,6 @@ def produce(args):
         if not story:
             raise ValueError("Voer een verhaal of shotidee in.")
         pictures = [(f"image{index}", path) for index, path in enumerate(args.references, 17)]
-        plan_file = project / "shots.json"
         if plan_file.exists():
             plan = read_json(plan_file)
         else:
@@ -67,7 +66,7 @@ def produce(args):
         atomic_json(receipt, state)
     atomic_json(project / "shots.json", state["plan"])
     atomic_json(project / "timeline.json", state["document"])
-    progress(project, "rendering")
+    progress(project, "rendering", completed=0, total=len(state["plan"]["shots"]))
     if "job_id" not in state:
         if "render" not in state:
             created = client.create(state["document"], state["key"])
@@ -101,8 +100,6 @@ def produce(args):
 
 
 def main():
-    import fcntl
-
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("story", type=Path)
     parser.add_argument("project", type=Path)
@@ -115,8 +112,7 @@ def main():
     if any(mimetypes.guess_type(path.name)[0] not in {"image/jpeg", "image/png", "image/webp"}
            for path in args.references):
         parser.error("Reference pictures must be JPEG, PNG or WebP")
-    with open("/workspace/.studio-render.lock", "a") as lock:
-        fcntl.flock(lock, fcntl.LOCK_EX)
+    with gpu_lock():
         try:
             print(produce(args))
         except Exception as error:
