@@ -39,5 +39,5 @@ exec "${LLAMA_SERVER:-/opt/llama/bin/llama-server}" \
   --ctx-size "${CTX_SIZE:-8192}" --parallel 1 \
   --n-gpu-layers 99 --flash-attn on \
   --batch-size 512 --ubatch-size 128 \
-  --jinja --no-webui \
+  --sleep-idle-seconds 10 --jinja --no-webui \
   --temp 1.0 --top-k 20 --top-p 0.95 --min-p 0.0

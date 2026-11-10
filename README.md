@@ -56,3 +56,17 @@ De template publiceert alleen SSH. Open Writer en ComfyUI via dezelfde SSH-verbi
 
 Open Writer op http://localhost:8190 en ComfyUI met Continuity Studio op http://localhost:8188. Configureer in Writer de Qwen-provider met http://127.0.0.1:8080/v1 en de Qwen-sleutel. De planner, tijdlijnvoorbereiding en export staan in de container onder /opt/studio. Automatische aansturing vanuit de browser en GPU-beurtregeling zijn nog open.
 
+
+## Automatische productie op Runpod
+
+Voer op de Studio-pod via SSH uit:
+
+```sh
+python /opt/studio/run_studio.py verhaal.txt /workspace/projecten/proef referentie-a.png referentie-b.jpg
+```
+
+Qwen leest de beelden en maakt vijf prompts met de referentiegids van Writer.
+Continuity rendert met het profiel `studio-turbo8`. De projectmap bevat het
+shotplan, de tijdlijn, de render-ID, vijf clips en `film.mp4`. Herhaal het
+commando met dezelfde projectmap om een eerdere render op te vragen en de
+export af te maken. Kies voor een nieuw verhaal een nieuwe projectmap.

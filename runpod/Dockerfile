@@ -52,7 +52,9 @@ RUN python3 -m venv /opt/writer-venv \
 COPY writer/h3_standalone/ /opt/writer/h3_standalone/
 COPY writer/upstream/ /opt/writer/upstream/
 COPY writer/VERSION writer/LICENSE /opt/writer/
-COPY plan_story.py prepare_timeline.py export_project.py /opt/studio/
+COPY plan_story.py prepare_timeline.py export_project.py run_studio.py /opt/studio/
+COPY runpod/studio-profile.py /opt/combined/
+RUN python3 /opt/combined/studio-profile.py
 COPY runpod/start-writer.sh /opt/combined/
 ENV PATH=/opt/venv/bin:$PATH
 ENV ENABLE_WRITER=true ENABLE_COMFYUI=true ENABLE_QWEN=true CTX_SIZE=65536 \
