@@ -11,6 +11,8 @@ def make(image=DEFAULT_IMAGE):
     env = {
         'ENABLE_STUDIO': 'true', 'ENABLE_COMFYUI': 'true', 'ENABLE_QWEN': 'true',
         'STUDIO_PASSWORD': '{{ RUNPOD_SECRET_STUDIO_PASSWORD }}',
+        'HF_TOKEN': '{{ RUNPOD_SECRET_HF_TOKEN }}',
+        'CIVITAI_TOKEN': '{{ RUNPOD_SECRET_CIVITAI_TOKEN }}',
         'CTX_SIZE': '65536',
         'HF_EXTRA_MODELS': '[]',
         'HF_XET_HIGH_PERFORMANCE': '1', 'HF_XET_NUM_CONCURRENT_RANGE_GETS': '32',
