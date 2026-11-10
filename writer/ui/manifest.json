@@ -1,0 +1,24 @@
+{
+  "name": "H3 Learning Writer",
+  "short_name": "H3 Learning",
+  "description": "Independent H3 prompt writer with automatic learning from uploaded result videos",
+  "start_url": "./",
+  "icons": [
+    {
+      "src": "/app-icons/h3-prompt-writer-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/app-icons/h3-prompt-writer-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    },
+    {
+      "src": "/assets/h3-prompt-writer-launcher.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ],
+  "display": "standalone"
+}

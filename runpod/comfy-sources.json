@@ -1,0 +1,24 @@
+{
+  "comfyui": {
+    "url": "https://github.com/Comfy-Org/ComfyUI.git",
+    "ref": "7a28332047b6af638dc6c7f72ef3481a718769fd"
+  },
+  "nodes": [
+    {
+      "url": "https://github.com/kijai/ComfyUI-KJNodes.git",
+      "ref": "f4bae1f9960e5d643573a2ecf7abd56453a21821"
+    },
+    {
+      "url": "https://github.com/rgthree/rgthree-comfy.git",
+      "ref": "d7297b42f0fa78bec1c0411478f887423c249502"
+    },
+    {
+      "url": "https://github.com/Kosinkadink/ComfyUI-VideoHelperSuite.git",
+      "ref": "4d907bee61e92c2e65af3bd6383a4e4d356126d1"
+    },
+    {
+      "url": "https://github.com/KadoBOT/ComfyUI-H3-Continuity-Studio.git",
+      "ref": "e6a37dcf36d9be541a5cbde0667720836e51b615"
+    }
+  ]
+}

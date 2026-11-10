@@ -1,0 +1,75 @@
+name: Build ComfyUI MiniMax + Qwen image
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "**"
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: docker-comfyui-minimax
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate model provisioning and runtime cleanup
+        run: |
+          python3 -m pip install requests==2.32.5 tqdm
+          python3 -m unittest discover -s tests -v
+      - name: Make room on the disposable build runner
+        run: |
+          sudo rm -rf /usr/local/lib/android /opt/ghc /usr/share/dotnet /opt/hostedtoolcache/CodeQL
+          docker system prune --all --force
+          df -h /
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build and publish prebuilt combined image
+        id: image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: |
+            ghcr.io/pandanyxis/minimax-qwen-comfyui:comfy-${{ github.sha }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/pandanyxis/minimax-qwen-comfyui
+            org.opencontainers.image.description=ComfyUI Civitai MiniMax INT8 plus Qwen vision API
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=1.5
+          build-args: |
+            CUDA_ARCHITECTURES=90;100;120
+            BUILD_JOBS=2
+          cache-from: type=registry,ref=ghcr.io/pandanyxis/minimax-qwen-comfyui:comfy-buildcache
+          cache-to: type=registry,ref=ghcr.io/pandanyxis/minimax-qwen-comfyui:comfy-buildcache,mode=max
+      - name: Verify independent runtime in the built image
+        run: |
+          docker run --rm --entrypoint /usr/bin/python3 ghcr.io/pandanyxis/minimax-qwen-comfyui:comfy-${{ github.sha }} -c '
+          import json
+          from pathlib import Path
+          assert not Path("/comfyui-runtime").exists()
+          assert not Path("/comfyui-minimax").exists()
+          assert len(json.loads(Path("/opt/combined/model-manifest.json").read_text())) == 10
+          assert len(json.loads(Path("/opt/combined/comfy-sources.json").read_text())["nodes"]) == 3
+          print("Independent runtime and selected models verified")'
+          docker run --rm --entrypoint /opt/venv/bin/python ghcr.io/pandanyxis/minimax-qwen-comfyui:comfy-${{ github.sha }} /opt/combined/cpu-smoke.py
+      - name: Publish v1.5 and latest after successful smoke test
+        run: docker buildx imagetools create --tag ghcr.io/pandanyxis/minimax-qwen-comfyui:comfy-v1.5 --tag ghcr.io/pandanyxis/minimax-qwen-comfyui:latest ghcr.io/pandanyxis/minimax-qwen-comfyui@${{ steps.image.outputs.digest }}
+      - name: Record image digest
+        run: |
+          echo '### Combined image' >> "$GITHUB_STEP_SUMMARY"
+          echo 'ghcr.io/pandanyxis/minimax-qwen-comfyui@${{ steps.image.outputs.digest }}' >> "$GITHUB_STEP_SUMMARY"

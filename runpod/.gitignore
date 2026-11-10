@@ -1,0 +1,11 @@
+.env
+__pycache__/
+runtime-settings.json
+runpod-template.json
+runpod-created.json
+test-pod.json
+*.pem
+*.key
+access.json
+
+hf-mirror-config.json

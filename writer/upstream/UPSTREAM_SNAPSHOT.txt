@@ -1,0 +1,5 @@
+H3 Prompt Writer core snapshot
+repository_commit=8e8d95104825c6d6046d15a260a1bec7ab71c783
+dirty=false
+extension_version=0.4.6
+standalone_version=0.1.9
