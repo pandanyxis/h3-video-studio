@@ -51,6 +51,7 @@ RUN python3 -m venv /opt/writer-venv \
     && env -u PIP_CONSTRAINT /opt/writer-venv/bin/pip install --no-cache-dir -r /opt/writer/requirements.txt
 COPY writer/h3_standalone/ /opt/writer/h3_standalone/
 COPY writer/upstream/ /opt/writer/upstream/
+COPY writer/ui/ /opt/writer/ui/
 COPY writer/VERSION writer/LICENSE /opt/writer/
 COPY plan_story.py prepare_timeline.py export_project.py run_studio.py /opt/studio/
 COPY runpod/studio-profile.py /opt/combined/
