@@ -14,7 +14,7 @@ python runpod/make_template.py --image ghcr.io/pandanyxis/h3-video-studio:COMMIT
 
 Gebruik de gegenereerde configuratie voor een Pod met een RTX PRO 6000 Blackwell 96 GB en CUDA 13 of nieuwer. De template reserveert 50 GB voor de container en 120 GB voor modellen en projecten op `/workspace`. Voor een private image heeft Runpod leesrechten nodig via Container Registry Auth. Zie [de GPU-configuratie](runpod/README.md) voor opslag en toegang.
 
-De Studio-interface luistert op de loopback-interface van de Pod. Open een SSH-tunnel en ga in de browser naar [Studio op localhost](http://localhost:8190/).
+De interface, planner, Writer, render en export draaien allemaal op de Linux-Pod. Open op je pc een SSH-tunnel en ga in je browser naar [Studio op localhost](http://localhost:8190/).
 
 ```sh
 ssh -N -L 8190:127.0.0.1:8190 -p SSH_PORT root@POD_IP
@@ -30,22 +30,14 @@ python /opt/studio/run_studio.py verhaal.txt /workspace/studio/projects/proef re
 
 De projectmap bevat het shotplan, de tijdlijn, de render-ID, de losse clips en `film.mp4`. Browserprojecten bewaren ook de invoer en `render.log`. Herhaal het CLI-commando met dezelfde projectmap om een bestaande render op te vragen en de export af te maken. Gebruik voor een nieuw verhaal een nieuwe projectmap.
 
-## Studio op je pc gebruiken
+## Interface lokaal bekijken
 
 ```sh
 python -m pip install -r requirements.txt
 python studio_web.py --projects ./projects
 ```
 
-Open http://localhost:8190. Je projecten staan op je pc. Voor productie heeft Studio Qwen en ComfyUI op de GPU-host nodig en moet `ffmpeg` op je pc op `PATH` staan.
-
-Gebruik voor deze opstelling een Pod met `ENABLE_STUDIO=false`. Open de verbinding met de GPU-diensten en stel `LLAMA_API_KEY` op je pc in op dezelfde sleutel als op de Pod.
-
-```sh
-ssh -N -L 8080:127.0.0.1:8080 -L 8188:127.0.0.1:8188 -p SSH_PORT root@POD_IP
-```
-
-Studio kan je project opslaan terwijl de GPU-host opstart.
+Open http://localhost:8190 voor een lokaal interfacevoorbeeld. Gebruik de Runpod-versie voor de volledige productie.
 
 ## Controles
 
