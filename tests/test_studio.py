@@ -72,13 +72,36 @@ class WriterTests(unittest.TestCase):
                 plan = shot_plan(2)
                 if len(pictures) > 1:
                     plan["shots"][0]["reference_slots"] = ["image17"]
-                    plan["shots"][1]["reference_slots"] = ["image18"]
+                    plan["shots"][1]["reference_slots"] = ["@image18"]
                 with patch.object(writer, "ask_qwen", side_effect=[
                     plan, {"prompts": ["@image17 enters.", "The subject turns."]},
                 ]):
                     result = writer.plan_and_write("Two shots", pictures)
                 for shot, reference in zip(result["shots"], expected):
                     self.assertIn(reference, shot["prompt"])
+
+    def test_invalid_reference_slots_are_replanned_before_writing(self):
+        pictures = [("image17", None), ("image18", None)]
+        invalid = shot_plan(1)
+        invalid["shots"][0]["reference_slots"] = ["image2"]
+        for resume in (False, True):
+            with self.subTest(resume=resume), tempfile.TemporaryDirectory() as folder:
+                project = Path(folder)
+                saved = project / "plan.json"
+                if resume:
+                    saved.write_text(json.dumps(invalid), encoding="utf-8")
+                corrected = shot_plan(1)
+                corrected["shots"][0]["reference_slots"] = ["image18"]
+                replies = [corrected, {"prompts": ["The boat drifts."]}]
+                if not resume:
+                    replies.insert(0, invalid)
+                with patch.object(writer, "ask_qwen", side_effect=replies) as call:
+                    result = writer.plan_and_write("A boat", pictures, project)
+                self.assertEqual(call.call_count, len(replies))
+                self.assertIn("image17, image18", call.call_args_list[-2].args[0])
+                self.assertEqual(read_json(saved)["shots"][0]["reference_slots"], ["image18"])
+                self.assertIn("@image18", result["shots"][0]["prompt"])
+                self.assertNotIn("@image17", result["shots"][0]["prompt"])
 
     def test_qwen_retries_truncated_output_without_thinking(self):
         def response(finish_reason, content):

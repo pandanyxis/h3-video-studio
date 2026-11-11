@@ -101,16 +101,27 @@ def referenced_slots(text):
     return set(re.findall(r"@(image\d+)\b", text))
 
 
+class InvalidPlannerReferences(ValueError):
+    pass
+
+
+def planned_reference_slots(shot, slots):
+    planned = shot.get("reference_slots")
+    if planned is None:
+        return []
+    if isinstance(planned, list) and all(isinstance(slot, str) for slot in planned):
+        normalized = [slot.strip().removeprefix("@") for slot in planned]
+        if set(normalized) <= slots:
+            return normalized
+    labels = ", ".join(sorted(slots))
+    raise InvalidPlannerReferences(f"The Planner returned invalid image references. Available labels: {labels}.")
+
+
 def bind_shot_references(prompt, shot, slots, *, existing=()):
     used = referenced_slots(prompt)
     if not used <= slots:
         raise ValueError("Studio Writer returned an unknown picture slot")
-    planned = shot.get("reference_slots")
-    if planned is None:
-        planned = []
-    if not isinstance(planned, list) or any(
-            not isinstance(slot, str) or slot not in slots for slot in planned):
-        raise ValueError("The Planner returned invalid image references for a shot.")
+    planned = planned_reference_slots(shot, slots)
     required = slots if len(slots) == 1 else set(planned)
     missing = (required | set(existing)) - used
     if missing:
@@ -165,8 +176,9 @@ def plan_and_write(story, pictures, project=None, writer_prompt=DEFAULT_WRITER_P
         check_cancelled(project)
         progress(project, "planning")
     saved = Path(project) / "plan.json" if project else None
-    resumed = saved and saved.is_file()
-    plan = read_json(saved) if resumed else ask_qwen(
+    slots = {slot for slot, _ in pictures}
+    labels = ", ".join(slot for slot, _ in pictures)
+    planner_instructions = (
         "You are Studio's story and shot planner. The user supplies a rough shot idea "
         "or a story, not technical video prompts. " + shot_count_instruction() +
         "Return only a JSON object with a shots array in story order. "
@@ -183,7 +195,8 @@ def plan_and_write(story, pictures, project=None, writer_prompt=DEFAULT_WRITER_P
         "Set it to true for a distinct scene or a hard camera cut called for by the story. "
         "Ground character identity, clothing, objects and locations in the reference images. "
         + REFERENCE_ROLE_INSTRUCTIONS +
-        "For every shot, include a reference_slots array of supplied imageN labels, without the @ prefix. "
+        f"For every shot, include a reference_slots array. The only allowed values are: {labels}. "
+        "Copy these labels exactly, without the @ prefix. Do not renumber them based on upload order. "
         "List the references for every person, object or setting that appears in that shot, even if it "
         "appeared in the previous shot. Use an empty array only for a deliberate cutaway with no relevant reference. "
         "For interactions, establish each person's position and orientation and assign each gesture, "
@@ -192,10 +205,28 @@ def plan_and_write(story, pictures, project=None, writer_prompt=DEFAULT_WRITER_P
         "labels for visual references. Connect each shot's opening state to the previous "
         "closing state when the action is continuous. Make each start and end describe visible "
         "positions relative to fixed landmarks, body pose, movement in progress, and relevant objects. "
-        "Keep actions feasible in a short clip.",
-        story, pictures, reference_notes=notes,
+        "Keep actions feasible in a short clip."
     )
-    shots = validate_plan(plan, require_duration=not resumed)
+    plan = read_json(saved) if saved and saved.is_file() else None
+    retry_instruction = ""
+    for attempt in range(2):
+        resumed = plan is not None
+        if not resumed:
+            if project:
+                check_cancelled(project)
+            plan = ask_qwen(planner_instructions + retry_instruction, story, pictures, reference_notes=notes)
+        shots = validate_plan(plan, require_duration=not resumed)
+        try:
+            for shot in shots:
+                if "reference_slots" in shot:
+                    shot["reference_slots"] = planned_reference_slots(shot, slots)
+        except InvalidPlannerReferences as error:
+            if attempt == 1:
+                raise
+            plan = None
+            retry_instruction = f" Correct the reference_slots arrays. {error}"
+        else:
+            break
     if saved:
         atomic_json(saved, plan)
         check_cancelled(project)
@@ -228,7 +259,6 @@ def plan_and_write(story, pictures, project=None, writer_prompt=DEFAULT_WRITER_P
     prompts = written.get("prompts") if isinstance(written, dict) else None
     if not isinstance(prompts, list) or len(prompts) != len(shots):
         raise ValueError(f"Studio Writer must return exactly {len(shots)} prompts")
-    slots = {slot for slot, _ in pictures}
     used = set()
     for shot, prompt in zip(shots, prompts):
         if not isinstance(prompt, str) or not prompt.strip():
