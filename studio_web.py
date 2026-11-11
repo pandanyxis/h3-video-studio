@@ -395,7 +395,7 @@ class StudioHandler(BaseHTTPRequestHandler):
         if self.path == "/":
             return self.reply(200, "text/html; charset=utf-8", (HERE / "studio.html").read_bytes())
         refinement = re.fullmatch(
-            r"/projects/([a-f0-9]{32})/refinements/([a-f0-9]{32})(?:/(frame-[1-3]\.jpg))?", self.path)
+            r"/projects/([a-f0-9]{32})/refinements/([a-f0-9]{32})(?:/(frame-[1-9]\d?\.jpg))?", self.path)
         if refinement:
             directory = ROOT / refinement[1] / "refinements" / refinement[2]
             review = directory / "review.json"

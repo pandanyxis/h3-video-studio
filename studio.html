@@ -67,9 +67,10 @@ select,input[type=number] { width:100%; border:1px solid #3a485c; border-radius:
 .shot-review button { justify-self:start; }
 .refine-panel { display:grid; gap:14px; padding:16px; margin-top:16px; border:1px solid var(--line); border-radius:10px; background:#101822; }
 .refine-panel h3,.refine-panel p { margin:0; }
-.refine-evidence { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; }
+.refine-evidence { display:grid; grid-auto-flow:column; grid-auto-columns:calc((100% - 16px) / 3); gap:8px; overflow-x:auto; padding-bottom:6px; }
 .refine-evidence figure { width:auto; }
 .refine-evidence img { width:100%; height:auto; aspect-ratio:16/9; object-fit:contain; background:#0c1118; }
+@media(max-width:550px) { .refine-evidence { grid-auto-columns:calc((100% - 8px) / 2); } }
 .refine-proposal { display:grid; gap:10px; }
 .refine-proposal textarea { min-height:140px; }
 .shot-video { display:block; width:100%; max-height:360px; margin:12px 0; border-radius:8px; background:#0c1118; }
@@ -309,7 +310,7 @@ function refineForm(base, index, video, savedReview) {
       return;
     }
     reviewId = review.id;
-    status.textContent = 'Review or edit the prompt before starting a new render.';
+    status.textContent = 'Qwen reviewed ' + review.frames.length + ' frames. Edit the prompt before starting a new render.';
     evidence.replaceChildren(...review.frames.map(frame =>
       thumbnail(endpoint + '/' + frame.file, frame.seconds.toFixed(2) + ' s')));
     if (review.frames.length && !video.poster) video.poster = endpoint + '/' + review.frames[0].file;

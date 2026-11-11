@@ -22,6 +22,15 @@ def revision_inputs(project, payload):
     return plan, index, feedback.strip()
 
 
+def review_timestamps(duration):
+    if not math.isfinite(duration) or duration <= 0:
+        raise ValueError("The clip duration could not be read.")
+    count = max(3, min(15, math.ceil(duration * 1.5) + 1))
+    margin = min(0.08, duration * 0.1)
+    spacing = (duration - 2 * margin) / (count - 1)
+    return [margin + index * spacing for index in range(count)]
+
+
 def clip_evidence(clip, directory):
     result = subprocess.run(
         ["ffprobe", "-v", "error", "-show_entries", "format=duration",
@@ -29,11 +38,8 @@ def clip_evidence(clip, directory):
         capture_output=True, text=True, check=True, timeout=15,
     )
     duration = float(result.stdout.strip())
-    if not math.isfinite(duration) or duration <= 0:
-        raise ValueError("The clip duration could not be read.")
     frames = []
-    for number, fraction in enumerate((0.1, 0.5, 0.9), 1):
-        timestamp = duration * fraction
+    for number, timestamp in enumerate(review_timestamps(duration), 1):
         frame = directory / f"frame-{number}.jpg"
         subprocess.run(
             ["ffmpeg", "-nostdin", "-y", "-loglevel", "error", "-ss", f"{timestamp:.6f}",

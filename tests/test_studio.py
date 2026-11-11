@@ -16,6 +16,7 @@ from urllib.request import Request, urlopen
 from PIL import Image
 
 import run_studio
+from studio_refine import review_timestamps
 from studio_render import RenderClient, RenderError
 from studio_storage import read_json
 from prepare_timeline import timeline_document
@@ -35,6 +36,16 @@ def shot_plan(count=5):
 
 
 class WriterTests(unittest.TestCase):
+    def test_review_frame_count_scales_with_clip_length(self):
+        for duration, count in ((0.5, 3), (1, 3), (3, 6), (5, 9), (10, 15)):
+            with self.subTest(duration=duration):
+                timestamps = review_timestamps(duration)
+                self.assertEqual(len(timestamps), count)
+                self.assertEqual(timestamps, sorted(set(timestamps)))
+                self.assertGreater(timestamps[0], 0)
+                self.assertLess(timestamps[-1], duration)
+                self.assertAlmostEqual(timestamps[0] + timestamps[-1], duration)
+
     def test_writer_restores_references_omitted_from_individual_shots(self):
         for pictures, expected in (
             ([("image17", None)], ("@image17", "@image17")),
