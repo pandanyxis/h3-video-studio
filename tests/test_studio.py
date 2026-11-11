@@ -210,6 +210,37 @@ class ProductionTests(unittest.TestCase):
             planner.assert_called_once_with("Een boot", [("image17", image)], project,
                                             writer_prompt=instructions)
 
+    def test_shot_revision_preserves_previous_version_and_uses_native_selection(self):
+        with tempfile.TemporaryDirectory() as folder, patch.object(web, "ROOT", Path(folder)):
+            parent = web.stage({"story": "Een boot", "images": [image_data()]})
+            plan = {**shot_plan(2), "story": "Een boot"}
+            for shot in plan["shots"]:
+                shot["prompt"] = "@image17 boat"
+            document = timeline_document(plan, parent.name, "studio-turbo8")
+            for box in document["timeline"]["boxes"]:
+                box["prompt"] = "@image17 boat"
+            original = {"plan": plan, "document": document, "project_id": "native-project"}
+            web.atomic_json(parent / "production.json", original)
+            (parent / "film.mp4").write_bytes(b"original")
+            revision = web.stage_revision(parent, {"shot": 1, "feedback": "Laat de boot afremmen."})
+            pictures = [("image17", revision / "reference-01.png")]
+            with patch.object(writer, "ask_qwen", return_value={"prompt": "@image17 boat slows down"}):
+                state = run_studio.prepare_revision(
+                    revision, read_json(revision / "revision.json"), pictures, writer.DEFAULT_WRITER_PROMPT)
+            self.assertEqual(state["document"]["timeline"]["boxes"][0]["prompt"], "@image17 boat")
+            self.assertEqual(state["document"]["timeline"]["boxes"][1]["prompt"], "@image17 boat slows down")
+            self.assertEqual(read_json(parent / "production.json"), original)
+            self.assertEqual((parent / "film.mp4").read_bytes(), b"original")
+            client = unittest.mock.MagicMock()
+            client.project.return_value = {"revision": 3, "timeline": state["document"]["timeline"]}
+            client.plan.return_value = {"plan_sha256": "hash"}
+            state["base_revision"] = 2
+            run_studio.prepare_render(client, state, revision / "production.json")
+            client.update_project.assert_not_called()
+            client.plan.assert_called_once_with("native-project", {
+                "expected_revision": 3, "selection": {"kind": "boxes", "ids": ["shot-02"], "rerender": True},
+            })
+
     def test_lost_render_response_reuses_request_and_saved_prompts(self):
         with tempfile.TemporaryDirectory() as folder:
             project = Path(folder)
@@ -243,7 +274,8 @@ class ProductionTests(unittest.TestCase):
                     run_studio.produce(args)
                 saved_key = read_json(project / "production.json")["key"]
                 self.assertEqual(run_studio.produce(args).read_bytes(), b"movie")
-                planner.assert_called_once()
+                planner.assert_called_once_with("Een boot", [("image17", image)], project,
+                                                writer_prompt=writer.DEFAULT_WRITER_PROMPT)
                 client.create.assert_called_once()
                 self.assertEqual(client.render.call_args_list[0], client.render.call_args_list[1])
                 self.assertEqual(client.render.call_args.args[2], saved_key)

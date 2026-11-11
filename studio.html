@@ -55,6 +55,10 @@ select,input[type=number] { width:100%; border:1px solid #3a485c; border-radius:
 .writer-settings label,.writer-settings textarea { display:block; margin-top:10px; }
 .writer-settings textarea { min-height:240px; }
 .writer-settings button { margin-top:10px; }
+.shot-review { display:grid; gap:8px; margin-top:12px; }
+.shot-review textarea { min-height:90px; }
+.shot-review button { justify-self:start; }
+.shot-video { display:block; width:100%; max-height:360px; margin:12px 0; border-radius:8px; background:#0c1118; }
 input[type=file] { width:100%; border:1px dashed #42536b; padding:17px; border-radius:8px; color:var(--muted); }
 input::file-selector-button { background:#26354a; border:0; border-radius:5px; color:#e9eef6; padding:7px 10px; margin-right:12px; cursor:pointer; }
 #submit { justify-self:start; margin-top:8px; }
@@ -156,6 +160,11 @@ summary { cursor:pointer; font-size:13px; font-weight:550; }
         <h2>Jouw verhaal</h2>
         <p class="project-story" id="saved-story"></p>
         <div class="thumbnails" id="saved-images"></div>
+        <p id="previous-film" hidden><a id="previous-film-link">Vorige filmversie bekijken</a></p>
+        <div id="render-preview" hidden>
+          <h2 id="render-preview-title">Laatste gerenderde clip</h2>
+          <video class="shot-video" id="render-preview-video" controls playsinline preload="auto" aria-labelledby="render-preview-title"></video>
+        </div>
         <div id="project-output" hidden>
           <h2>Je film is klaar</h2>
           <video id="film" controls preload="metadata" aria-label="Voltooide film"></video>
@@ -167,7 +176,7 @@ summary { cursor:pointer; font-size:13px; font-weight:550; }
         </div>
       </section>
       <section id="shots-section" hidden>
-        <h2>Shots &amp; geschreven prompts</h2>
+        <h2>Clips beoordelen</h2>
         <div id="shots"></div>
       </section>
     </div>
@@ -260,12 +269,27 @@ function showProject(project) {
   const count = project.progress.completed || 0;
   const total = project.progress.total || project.shots.length;
   $('#project-status').textContent = labels[stage] || statusLabels[project.status];
-  if (stage === 'rendering' && total) $('#project-status').textContent += ' ' + count + ' van ' + total + ' gereed.';
+  if (stage === 'rendering' && total) $('#project-status').textContent += ' ' + count + ' van ' + total + ' clips beschikbaar.';
+  if (stage === 'rendering' && project.progress.current_shot) {
+    $('#project-status').textContent += ' Bezig met shot ' + project.progress.current_shot + '.';
+  }
   if (stage === 'writing' && total) $('#project-status').textContent += ' ' + total + (total === 1 ? ' shot gepland.' : ' shots gepland.');
   $('#notice').textContent = project.status === 'failed' ? (project.progress.error || labels.failed) : '';
   $('#resume').hidden = project.status !== 'failed';
   $('#log').hidden = project.status !== 'failed';
   $('#log').href = base + '/render.log';
+  $('#previous-film').hidden = !project.parent;
+  $('#previous-film-link').href = project.parent ? '#' + project.parent : '#';
+  const preview = project.status === 'running' && project.clips.at(-1);
+  $('#render-preview').hidden = !preview;
+  if (preview) {
+    const url = base + '/clips/' + preview;
+    if ($('#render-preview-video').getAttribute('src') !== url) $('#render-preview-video').src = url;
+    $('#render-preview-title').textContent = 'Laatste gerenderde clip · Shot ' + Number(preview.slice(5,7));
+  } else if ($('#render-preview-video').hasAttribute('src')) {
+    $('#render-preview-video').removeAttribute('src');
+    $('#render-preview-video').load();
+  }
   $('#project-output').hidden = project.status !== 'done';
   if (project.status === 'done' && $('#film').getAttribute('src') !== base + '/film.mp4') {
     $('#film').src = base + '/film.mp4';
@@ -276,7 +300,7 @@ function showProject(project) {
     $('#saved-images').replaceChildren(...project.references.map((name,i) => thumbnail(base + '/' + name,'Referentie ' + (i+1))));
     state.referenceId = project.id;
   }
-  const signature = JSON.stringify([project.id,project.shots,project.clips]);
+  const signature = JSON.stringify([project.id,project.shots,project.clips,project.can_revise]);
   if (signature === state.shotSignature) return;
   state.shotSignature = signature;
   $('#shots-section').hidden = !project.shots.length;
@@ -296,12 +320,45 @@ function showProject(project) {
     detail.append(summary,description,prompt);
     const filename = 'shot-' + String(i+1).padStart(2,'0') + '.mp4';
     if (project.clips.includes(filename)) {
+      const video = document.createElement('video');
+      video.className = 'shot-video';
+      video.controls = true;
+      video.playsInline = true;
+      video.preload = 'metadata';
+      video.src = base + '/clips/' + filename;
+      video.setAttribute('aria-label','Bekijk shot ' + (i+1));
       const clip = document.createElement('a');
       clip.className = 'clip';
       clip.href = base + '/clips/' + filename;
       clip.download = filename;
       clip.textContent = 'Download shot ' + (i+1);
-      detail.append(clip);
+      detail.append(video,clip);
+      if (project.can_revise) {
+        const form = document.createElement('form');
+        form.className = 'shot-review';
+        const label = document.createElement('label');
+        label.textContent = 'Wat moet beter aan shot ' + (i+1) + '?';
+        const feedback = document.createElement('textarea');
+        feedback.id = 'shot-feedback-' + i;
+        label.htmlFor = feedback.id;
+        feedback.required = true;
+        feedback.maxLength = 4000;
+        feedback.placeholder = 'Bijvoorbeeld: laat beide personen eerst stilstaan en daarna één hand uitsteken.';
+        const button = document.createElement('button');
+        button.className = 'secondary';
+        button.textContent = 'Verbeter shot en maak nieuwe filmversie';
+        form.append(label,feedback,button);
+        form.addEventListener('submit',async event => {
+          event.preventDefault();
+          button.disabled = true;
+          try {
+            const revised = await post(base + '/revisions',{shot:i,feedback:feedback.value});
+            location.hash = revised.id;
+          } catch (error) { $('#notice').textContent = error.message; }
+          finally { button.disabled = false; }
+        });
+        detail.append(form);
+      }
     }
     $('#shots').append(detail);
   });
@@ -333,6 +390,8 @@ function navigate() {
   $('#intro').hidden = Boolean(state.id);
   $('#shots-section').hidden = true;
   $('#project-output').hidden = true;
+  $('#render-preview').hidden = true;
+  $('#previous-film').hidden = true;
   $('#resume').hidden = true;
   $('#log').hidden = true;
   $('#page-label').textContent = state.id ? 'Jouw project' : 'Nieuw project';

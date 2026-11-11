@@ -116,12 +116,43 @@ def set_status(project, status):
     temporary.replace(project / "status")
 
 
+def stage_revision(parent, payload):
+    if not (parent / "film.mp4").is_file() or not (parent / "production.json").is_file():
+        raise ValueError("Wacht tot de film klaar is om een shot te verbeteren.")
+    index, feedback = payload.get("shot"), payload.get("feedback")
+    plan = read_json(parent / "production.json")["plan"]
+    if type(index) is not int or not 0 <= index < len(plan["shots"]):
+        raise ValueError("Kies een bestaand shot.")
+    if not isinstance(feedback, str) or not feedback.strip() or len(feedback) > 4000:
+        raise ValueError("Beschrijf in maximaal 4.000 tekens wat beter moet.")
+    project = ROOT / uuid.uuid4().hex
+    project.mkdir()
+    try:
+        for path in [parent / "story.txt", parent / "writer-prompt.txt", *sorted(parent.glob("reference-*"))]:
+            if path.is_file():
+                shutil.copyfile(path, project / path.name)
+        meta = read_json(parent / "project.json")
+        title = (project / "story.txt").read_text(encoding="utf-8").splitlines()[0][:80]
+        atomic_json(project / "project.json", {
+            **meta, "title": f"{title} · Shot {index + 1} herzien",
+            "created": datetime.now(timezone.utc).isoformat(), "parent": parent.name,
+        })
+        atomic_json(project / "revision.json", {"parent": parent.name, "shot": index, "feedback": feedback.strip()})
+        set_status(project, "queued")
+        progress(project, "queued")
+    except Exception:
+        shutil.rmtree(project)
+        raise
+    return project
+
+
 def project_data(project, details=False):
     status = "done" if (project / "film.mp4").is_file() else (project / "status").read_text(encoding="utf-8")
     meta = read_json(project / "project.json") if (project / "project.json").is_file() else {}
     state = read_json(project / "progress.json") if (project / "progress.json").is_file() else {"stage": status}
     result = {**meta, "id": project.name, "status": status, "progress": state}
     if details:
+        result["can_revise"] = status == "done" and (project / "production.json").is_file()
         result["story"] = (project / "story.txt").read_text(encoding="utf-8")
         result["references"] = [path.name for path in sorted(project.glob("reference-*"))]
         result["clips"] = [path.name for path in sorted((project / "clips").glob("shot-*.mp4"))]
@@ -303,16 +334,19 @@ class StudioHandler(BaseHTTPRequestHandler):
             if not schedule(project, resume=True):
                 return self.json(409, error="Dit project wordt al verwerkt of is voltooid.")
             return self.json(202, id=project.name)
-        if self.path != "/projects":
+        revision = re.fullmatch(r"/projects/([a-f0-9]{32})/revisions", self.path)
+        if self.path != "/projects" and not revision:
             return self.json(404, error="Onbekend adres.")
+        if revision and not (ROOT / revision[1] / "status").is_file():
+            return self.json(404, error="Project niet gevonden.")
         try:
             length = int(self.headers.get("Content-Length", "0"))
-            if not 0 < length <= MAX_REQUEST:
+            if not 0 < length <= (32 * 1024 if revision else MAX_REQUEST):
                 return self.json(413, error="De upload is te groot of leeg.")
             payload = json.loads(self.rfile.read(length))
             if not isinstance(payload, dict):
                 raise ValueError("Ongeldig project.")
-            project = stage(payload)
+            project = stage_revision(ROOT / revision[1], payload) if revision else stage(payload)
         except (ValueError, TypeError, OSError, UnidentifiedImageError, Image.DecompressionBombError, Image.DecompressionBombWarning) as error:
             return self.json(400, error=str(error) if isinstance(error, ValueError) else "Het referentiebeeld kon niet worden gelezen. Gebruik JPEG, PNG of WebP.")
         schedule(project)

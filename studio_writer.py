@@ -62,6 +62,30 @@ def ask_qwen(instructions, text, pictures):
         return json.loads(json.load(response)["choices"][0]["message"]["content"])
 
 
+def revise_shot(plan, index, feedback, pictures, writer_prompt):
+    shots = plan["shots"]
+    shot = shots[index]
+    written = ask_qwen(
+        "Revise only the selected English MiniMax H3 video prompt according to the user's feedback. "
+        "Keep the shot duration, reference identities and continuity with the adjacent shots. "
+        "Return a JSON object with one nonempty string named prompt. Use only supplied @imageN labels.\n\n"
+        + writer_prompt,
+        json.dumps({
+            "story": plan["story"], "previous": shots[index - 1] if index else None,
+            "shot": shot, "next": shots[index + 1] if index + 1 < len(shots) else None,
+            "feedback": feedback,
+        }, ensure_ascii=False), pictures,
+    )
+    prompt = written.get("prompt") if isinstance(written, dict) else None
+    if not isinstance(prompt, str) or not prompt.strip():
+        raise ValueError("De Writer gaf geen nieuwe prompt voor dit shot.")
+    labels = set(re.findall(r"@(image\d+)\b", prompt))
+    previous_labels = set(re.findall(r"@(image\d+)\b", shot["prompt"]))
+    if not previous_labels <= labels <= {slot for slot, _ in pictures}:
+        raise ValueError("De herziene prompt gebruikt ongeldige beeldreferenties.")
+    shot["prompt"] = prompt.strip()
+
+
 def plan_and_write(story, pictures, project=None, writer_prompt=DEFAULT_WRITER_PROMPT):
     if project:
         progress(project, "planning")

@@ -6,7 +6,7 @@ from pathlib import Path
 import re
 import time
 from urllib.error import HTTPError
-from urllib.parse import quote, urlsplit
+from urllib.parse import quote, urlencode, urlsplit
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 import uuid
 
@@ -77,6 +77,26 @@ class RenderClient:
 
     def create(self, document, key):
         return self.request(PREFIX + "/projects", "POST", document, key)
+
+    def project(self, project_id):
+        return self.request(PREFIX + "/projects/" + quote(project_id, safe=""))
+
+    def update_project(self, project_id, document, revision):
+        fields = {key: document[key] for key in ("name", "settings", "timeline", "assets")}
+        return self.request(PREFIX + "/projects/" + quote(project_id, safe=""),
+                            "PUT", dict(fields, expected_revision=revision))
+
+    def current_clip(self, project_id, box_id):
+        path = PREFIX + "/projects/" + quote(project_id, safe="") + "/takes"
+        group = self.request(path + "?" + urlencode({"box": box_id})).get("box") or {}
+        active = group.get("in_use")
+        if not active or not active.get("created"):
+            return None
+        for take in group["takes"]:
+            artifact = take.get("video")
+            if take["created"] == active["created"] and artifact and artifact.get("unit_id") == "box:" + box_id:
+                return artifact
+        return None
 
     def plan(self, project_id, selection):
         return self.request(PREFIX + "/projects/" + quote(project_id, safe="") + "/plan", "POST", selection)
