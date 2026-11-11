@@ -51,7 +51,11 @@ def produce(args):
         if plan_file.exists():
             plan = read_json(plan_file)
         else:
-            plan = plan_and_write(story, pictures, project)
+            instructions = project / "writer-prompt.txt"
+            if instructions.is_file():
+                plan = plan_and_write(story, pictures, project, writer_prompt=instructions.read_text(encoding="utf-8"))
+            else:
+                plan = plan_and_write(story, pictures, project)
             atomic_json(plan_file, plan)
         body = timeline_document(plan, project.name, args.profile, getattr(args, "aspect", None))
         for box, shot in zip(body["timeline"]["boxes"], plan["shots"]):

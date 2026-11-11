@@ -12,6 +12,16 @@ from studio_storage import atomic_json, progress, read_json
 
 
 QWEN_URL = "http://127.0.0.1:8080"
+MAX_WRITER_PROMPT = 12000
+DEFAULT_WRITER_PROMPT = """Write precise English video direction for MiniMax H3. Preserve the user's intent and the planned action. Describe requested visible action directly and literally, without euphemisms or unrelated embellishment.
+
+Describe each shot in time order: the starting pose and placement, the trigger for movement, how the action develops, and the final pose or position. Name the subject of each movement. For important gestures, specify the relevant limb or object, its direction and speed, what it contacts, and when it settles. Where relevant, describe weight shifts, planted feet, grip, gaze, and the physical reaction to contact. Fit the number of actions and their timing to the shot duration.
+
+Keep subject identity, clothing, anatomy, object placement, scale, and screen direction consistent across frames and shots. State what remains steady when only part of the scene moves. Preserve the previous closing pose in the next opening when the action is continuous. Keep the movement physically coherent unless the story calls for a deliberate stylized effect.
+
+For interactions, give each person a distinct identifier and keep it throughout the shot. Establish where each person is in the frame, whom they face, and the distance between them. Describe one person's action and the other person's response in order. At physical contact, name whose left or right limb moves, the exact point it touches on the other person, and how they hold or separate. If one person passes behind or obscures the other, state who is in front, which body parts remain visible, and how each person reappears. When framing is flexible, keep the key gestures and contact points visible and each person's silhouette distinct.
+
+Describe framing and camera movement separately from subject movement. Specify a locked camera when the shot is static. Tie audible events to the action that produces them. Include dialogue only when requested. Focus on concrete details that affect the visible or audible result."""
 
 
 def qwen_ready():
@@ -52,7 +62,7 @@ def ask_qwen(instructions, text, pictures):
         return json.loads(json.load(response)["choices"][0]["message"]["content"])
 
 
-def plan_and_write(story, pictures, project=None):
+def plan_and_write(story, pictures, project=None, writer_prompt=DEFAULT_WRITER_PROMPT):
     if project:
         progress(project, "planning")
     saved = Path(project) / "plan.json" if project else None
@@ -67,6 +77,8 @@ def plan_and_write(story, pictures, project=None):
         "Split any beat that cannot fit within ten seconds. Set cut to true only where the next shot "
         "starts a distinct scene or the story calls for a hard camera cut. "
         "Ground character identity, clothing, objects and locations in the reference images. "
+        "For interactions, establish each person's position and orientation and assign each gesture, "
+        "point of contact and reaction to a specific person. "
         "Preserve the user's intent and character identities. Use only supplied @imageN "
         "labels for visual references. Connect each shot's opening state to the previous "
         "closing state when the action is continuous. Keep actions feasible in a short clip.",
@@ -77,18 +89,13 @@ def plan_and_write(story, pictures, project=None):
         atomic_json(saved, plan)
         progress(project, "writing", total=len(shots))
     written = ask_qwen(
-        "You are Studio's MiniMax H3 prompt writer. Convert the supplied shot plan "
-        "into complete, production-ready English video prompts in the same order. "
+        "Convert the supplied shot plan into complete English video prompts in the same order. "
         f"Return only a JSON object with a prompts array of exactly {len(shots)} nonempty strings. "
         "Write one prompt per planned shot and fit its movement and sounds into duration_seconds. "
         "Each string must be a self-contained prompt, never a list of suggestions or placeholders. "
-        "Preserve the plan's action, camera, sound, opening state and closing state. "
-        "Describe concrete visible movement chronologically, with clear subjects, framing, "
-        "camera movement, environment and audible sound. Keep dialogue only when requested. "
-        "Respect reference identities, clothing, props, screen direction and scene continuity. "
         "Use supplied @imageN labels to bind the relevant visual references to subjects. "
-        "Do not introduce unknown labels, new characters, unrelated actions or unexplained cuts. "
-        "The user must not need to supply or edit technical prompts.",
+        "Use only the supplied labels. Follow these writing instructions within that output format:\n\n"
+        + writer_prompt,
         json.dumps({"story": story, "shots": shots}, ensure_ascii=False), pictures,
     )
     prompts = written.get("prompts") if isinstance(written, dict) else None

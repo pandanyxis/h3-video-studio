@@ -35,6 +35,14 @@ def shot_plan(count=5):
 
 
 class WriterTests(unittest.TestCase):
+    def test_custom_instructions_replace_the_default_only_for_the_writer(self):
+        instructions = "Describe when the boat slows and when it stops."
+        with patch.object(writer, "ask_qwen", side_effect=[shot_plan(1), {"prompts": ["@image17 boat"]}]) as call:
+            writer.plan_and_write("Een boot", [("image17", None)], writer_prompt=instructions)
+        self.assertNotIn(instructions, call.call_args_list[0].args[0])
+        self.assertTrue(call.call_args_list[1].args[0].endswith(instructions))
+        self.assertIn("exactly 1 nonempty strings", call.call_args_list[1].args[0])
+
     def test_simple_and_complex_ideas_keep_the_planners_count(self):
         for count in (1, 7):
             with self.subTest(count=count):
@@ -186,6 +194,22 @@ class WebTests(unittest.TestCase):
 
 
 class ProductionTests(unittest.TestCase):
+    def test_project_writer_prompt_reaches_the_production_worker(self):
+        with tempfile.TemporaryDirectory() as folder, patch.object(web, "ROOT", Path(folder)):
+            instructions = "Keep the camera locked and describe each movement."
+            project = web.stage({"story": "Een boot", "images": [image_data()], "writer_prompt": instructions})
+            image = project / "reference-01.png"
+            args = SimpleNamespace(project=project, story=project / "story.txt",
+                                   references=[image], profile="studio-turbo8")
+            with (
+                patch.object(run_studio, "wait_for_models"),
+                patch.object(run_studio, "plan_and_write", side_effect=OSError("offline")) as planner,
+                self.assertRaisesRegex(OSError, "offline"),
+            ):
+                run_studio.produce(args)
+            planner.assert_called_once_with("Een boot", [("image17", image)], project,
+                                            writer_prompt=instructions)
+
     def test_lost_render_response_reuses_request_and_saved_prompts(self):
         with tempfile.TemporaryDirectory() as folder:
             project = Path(folder)

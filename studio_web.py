@@ -23,6 +23,7 @@ from prepare_timeline import ASPECT_SIZES, FPS
 from studio_profiles import SELECTION_PREFIX, default_settings, selection_profile
 from studio_render import RenderClient, RenderError
 from studio_storage import atomic_json, progress, read_json
+from studio_writer import DEFAULT_WRITER_PROMPT, MAX_WRITER_PROMPT
 
 ROOT = Path(os.environ.get("STUDIO_PROJECTS", "/workspace/studio/projects"))
 HERE = Path(__file__).resolve().parent
@@ -49,6 +50,9 @@ def render_profiles():
 
 def stage(payload):
     story, images = payload.get("story"), payload.get("images")
+    writer_prompt = payload.get("writer_prompt", "")
+    if not isinstance(writer_prompt, str) or len(writer_prompt) > MAX_WRITER_PROMPT:
+        raise ValueError(f"Gebruik maximaal {MAX_WRITER_PROMPT} tekens voor de Writer-instructies.")
     profile = payload.get("profile", DEFAULT_PROFILE["id"])
     settings = payload.get("render_settings")
     aspect = payload.get("aspect", "auto")
@@ -65,6 +69,7 @@ def stage(payload):
     project.mkdir(parents=True)
     try:
         (project / "story.txt").write_text(story.strip(), encoding="utf-8")
+        (project / "writer-prompt.txt").write_text(writer_prompt.strip() or DEFAULT_WRITER_PROMPT, encoding="utf-8")
         for index, encoded in enumerate(images, 1):
             if not isinstance(encoded, str) or len(encoded) > 4 * ((MAX_IMAGE + 2) // 3):
                 raise ValueError("Een referentiebeeld mag maximaal 8 MiB zijn.")
@@ -256,6 +261,8 @@ class StudioHandler(BaseHTTPRequestHandler):
             return
         if self.path == "/profiles":
             return self.json(200, profiles=render_profiles())
+        if self.path == "/writer-prompt":
+            return self.json(200, prompt=DEFAULT_WRITER_PROMPT, max_length=MAX_WRITER_PROMPT)
         if self.path == "/render-options":
             try:
                 options = RenderClient().model_options()

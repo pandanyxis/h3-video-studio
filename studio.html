@@ -50,6 +50,11 @@ select,input[type=number] { width:100%; border:1px solid #3a485c; border-radius:
 .render-settings button { justify-self:start; }
 .sampling { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; }
 .sampling label { display:grid; gap:6px; }
+.writer-settings { padding:12px 14px; border:1px solid var(--line); border-radius:8px; }
+.writer-settings summary { cursor:pointer; font-weight:600; }
+.writer-settings label,.writer-settings textarea { display:block; margin-top:10px; }
+.writer-settings textarea { min-height:240px; }
+.writer-settings button { margin-top:10px; }
 input[type=file] { width:100%; border:1px dashed #42536b; padding:17px; border-radius:8px; color:var(--muted); }
 input::file-selector-button { background:#26354a; border:0; border-radius:5px; color:#e9eef6; padding:7px 10px; margin-right:12px; cursor:pointer; }
 #submit { justify-self:start; margin-top:8px; }
@@ -105,6 +110,13 @@ summary { cursor:pointer; font-size:13px; font-weight:550; }
         <form id="create-form">
           <label for="story">Shotidee of verhaal</label>
           <textarea id="story" required maxlength="20000" placeholder="Bijvoorbeeld: een vrouw opent haar café aan zee. Ze zet koffie, ontdekt een brief en kijkt naar buiten…"></textarea>
+          <details class="writer-settings" id="writer-settings">
+            <summary>Prompt Writer-instellingen</summary>
+            <label for="writer-prompt">Schrijfinstructies voor dit project</label>
+            <textarea id="writer-prompt" aria-describedby="writer-help"></textarea>
+            <span id="writer-help" class="hint">Leeg laten gebruikt de standaardinstructies.</span>
+            <button id="reset-writer" type="button" class="secondary">Standaardtekst laden</button>
+          </details>
           <label for="images">Referentiebeelden</label>
           <span class="hint" id="limits">Personages, locaties of voorwerpen. 1–9 beelden van maximaal 8 MiB per beeld.</span>
           <input id="images" type="file" multiple required accept="image/png,image/jpeg,image/webp" aria-describedby="limits">
@@ -380,6 +392,22 @@ function showRenderSettings() {
 }
 $('#profile').addEventListener('change', showRenderSettings);
 $('#reload-models').addEventListener('click', loadRenderOptions);
+let writerDefaults;
+async function loadWriterPrompt({reset = false} = {}) {
+  const field = $('#writer-prompt');
+  const button = $('#reset-writer');
+  button.disabled = true;
+  try {
+    writerDefaults ??= await api('/writer-prompt');
+    field.maxLength = writerDefaults.max_length;
+    if (reset || !field.value) field.value = writerDefaults.prompt;
+  } catch (error) { $('#notice').textContent = error.message; }
+  finally { button.disabled = false; }
+}
+$('#writer-settings').addEventListener('toggle', () => {
+  if ($('#writer-settings').open && !$('#writer-prompt').value) loadWriterPrompt();
+});
+$('#reset-writer').addEventListener('click', () => loadWriterPrompt({reset:true}));
 $('#create-form').addEventListener('submit',async event => {
   event.preventDefault();
   const custom = $('#profile').value === 'own-settings';
@@ -401,6 +429,7 @@ $('#create-form').addEventListener('submit',async event => {
     } : null;
     const result = await post('/projects',{
       story:$('#story').value, profile:$('#profile').value, aspect:$('#aspect').value,
+      writer_prompt:$('#writer-prompt').value,
       images:await Promise.all(files.map(encode)),
       ...(custom ? {render_settings:renderSettings} : {})
     });
@@ -410,6 +439,7 @@ $('#create-form').addEventListener('submit',async event => {
 });
 $('#new-project').addEventListener('click',() => {
   $('#create-form').reset();
+  if ($('#writer-settings').open && writerDefaults) $('#writer-prompt').value = writerDefaults.prompt;
   showRenderSettings();
   state.previewUrls.forEach(url => URL.revokeObjectURL(url));
   state.previewUrls = [];
