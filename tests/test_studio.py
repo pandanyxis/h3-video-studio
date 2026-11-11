@@ -306,7 +306,13 @@ class WebTests(unittest.TestCase):
     def test_whole_film_review_passes_ordered_samples_and_saves_findings(self):
         project = web.stage({"story": "A boat", "images": [image_data()]})
         (project / "film.mp4").write_bytes(b"original")
-        web.atomic_json(project / "production.json", {"plan": {**shot_plan(2), "story": "A boat"}})
+        plan = {**shot_plan(3), "story": "A boat"}
+        for shot in plan["shots"]:
+            shot["prompt"] = "@image17 boat."
+        web.atomic_json(project / "production.json", {
+            "plan": plan, "document": timeline_document(plan, project.name, "studio-turbo8"),
+            "project_id": "native-project",
+        })
         with patch.object(web.QUEUE, "submit") as submit:
             with self.post(f"/projects/{project.name}/film-review", {"feedback": "Check story flow."}) as response:
                 self.assertEqual(response.status, 202)
@@ -317,19 +323,52 @@ class WebTests(unittest.TestCase):
             patch.object(studio_refine, "extract_review_frame", return_value=True),
             patch.object(studio_refine, "ask_qwen", return_value={
                 "summary": "The second shot repeats the opening.",
-                "issues": [{"shot": 2, "feedback": "Continue from the dock."}],
+                "reviews": [
+                    {"shot": 1, "observations": "Position matches."},
+                    {"shot": 2, "observations": "Action restarts.", "feedback": "Continue from the dock.",
+                     "prompt": "@image17 boat continues from the dock."},
+                    {"shot": 3, "observations": "The boat jumps.", "feedback": "Keep the boat moving forward.",
+                     "prompt": "@image17 boat continues moving forward."},
+                ],
             }) as review,
         ):
             task(root, directory)
         self.assertEqual(json.loads(review.call_args.args[1])["feedback"], "Check story flow.")
         self.assertEqual([label for _, _, label in review.call_args.kwargs["clip_frames"]],
-                         [f"Shot {shot}: {sample} video frame" for shot in (1, 2)
+                         [f"Shot {shot}: {sample} video frame" for shot in (1, 2, 3)
                           for sample in ("first", "middle", "last")])
         with urlopen(self.url + f"/projects/{project.name}") as response:
             result = json.load(response)["film_review"]
         self.assertEqual(result["status"], "ready")
-        self.assertEqual(result["issues"], {"2": "Continue from the dock."})
+        self.assertEqual(result["reviews"]["1"], {"observations": "Position matches."})
+        with patch.object(web, "schedule"):
+            with self.post(f"/projects/{project.name}/film-revision", {"review_id": result["id"]}) as response:
+                child = web.ROOT / json.load(response)["id"]
+        revised = run_studio.prepare_revision(child, read_json(child / "revision.json"), [], "")
+        self.assertEqual(revised["selection"]["ids"], ["shot-02", "shot-03"])
+        self.assertEqual(revised["plan"]["shots"][0]["prompt"], plan["shots"][0]["prompt"])
+        self.assertEqual(revised["plan"]["shots"][2]["prompt"], "@image17 boat continues moving forward.")
         self.assertEqual((project / "film.mp4").read_bytes(), b"original")
+
+    def test_single_refinement_includes_the_neighbor_boundaries(self):
+        project = web.stage({"story": "A boat", "images": [image_data()]})
+        (project / "film.mp4").write_bytes(b"original")
+        web.atomic_json(project / "production.json", {"plan": {**shot_plan(3), "story": "A boat"}})
+        clips = project / "clips"
+        clips.mkdir()
+        for index in range(1, 4):
+            (clips / f"shot-{index:02d}.mp4").touch()
+        with (
+            patch.object(studio_refine, "clip_evidence", return_value=[(0.2, project / "frame-1.jpg")]),
+            patch.object(studio_refine, "extract_review_frame", return_value=True) as extract,
+            patch.object(studio_refine, "suggest_revision", return_value={"prompt": "Boat slows."}) as suggest,
+        ):
+            review = studio_refine.refine_clip(project, project, {"shot": 1, "feedback": "Keep moving."})
+        self.assertEqual([call.args[0].name for call in extract.call_args_list], ["shot-01.mp4", "shot-03.mp4"])
+        self.assertEqual([call.kwargs["last"] for call in extract.call_args_list], [True, False])
+        self.assertEqual([entry[1].name for entry in suggest.call_args.kwargs["clip_frames"]],
+                         ["previous-last.jpg", "frame-1.jpg", "next-first.jpg"])
+        self.assertEqual(len(review["neighbor_frames"]), 2)
 
     def test_runpod_proxy_requires_login_and_its_own_https_origin(self):
         self.server.public_origin = "https://testpod-8190.proxy.runpod.net"

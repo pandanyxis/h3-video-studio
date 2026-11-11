@@ -6,7 +6,8 @@ import subprocess
 from tempfile import TemporaryDirectory
 
 from studio_storage import atomic_json, check_cancelled, progress, read_json
-from studio_writer import DEFAULT_WRITER_PROMPT, ask_qwen, read_reference_notes, suggest_revision
+from studio_writer import (DEFAULT_WRITER_PROMPT, ask_qwen, bind_shot_references,
+                           read_reference_notes, referenced_slots, suggest_revision)
 
 MAX_FEEDBACK = 4000
 MAX_REVISED_PROMPT = 12000
@@ -152,12 +153,23 @@ def refine_clip(project, directory, request):
     if not clip.is_file():
         raise ValueError("The selected clip is unavailable.")
     frames = clip_evidence(clip, directory)
+    previous, following = [], []
+    for neighbor, target, name, label, last in (
+        (index - 1, previous, "previous-last.jpg", "Previous shot: exact last video frame", True),
+        (index + 1, following, "next-first.jpg", "Next shot: exact first video frame", False),
+    ):
+        if not 0 <= neighbor < len(plan["shots"]):
+            continue
+        source = clip.with_name(f"shot-{neighbor + 1:02d}.mp4")
+        frame = directory / name
+        if source.is_file() and extract_review_frame(source, frame, last=last):
+            target.append((None, frame, label))
     pictures = [(f"image{number}", path) for number, path in
                 enumerate(sorted(project.glob("reference-*")), 17)]
     instructions = project / "writer-prompt.txt"
     writer_prompt = instructions.read_text(encoding="utf-8") if instructions.is_file() else DEFAULT_WRITER_PROMPT
     proposal = suggest_revision(
-        plan, index, feedback, pictures, writer_prompt, clip_frames=frames,
+        plan, index, feedback, pictures, writer_prompt, clip_frames=[*previous, *frames, *following],
         reference_notes=read_reference_notes(project),
     )
     if len(proposal["prompt"]) > MAX_REVISED_PROMPT:
@@ -165,6 +177,7 @@ def refine_clip(project, directory, request):
     return {
         **proposal,
         "frames": [{"file": frame.name, "seconds": round(timestamp, 2)} for timestamp, frame in frames],
+        "neighbor_frames": [{"file": frame.name, "label": label} for _, frame, label in previous + following],
     }
 
 
@@ -190,25 +203,40 @@ def review_film(project, feedback):
             "the user feedback and the labeled rendered frames. Check whether actions and reactions build on "
             "one another, story beats repeat or go missing, and adjacent shots join naturally. Treat earlier "
             "transition reports as supporting evidence. State uncertainty for motion, sound, or events that "
-            "the sampled frames cannot show. Return JSON with summary (a brief English overview) and issues "
-            "(an array of objects with shot, a one-based shot number to refine, and feedback, a specific "
-            "English edit note). Include only actionable issues worth the user's attention. Give at most one "
-            "combined note per affected shot. Use an empty issues array "
-            "when you find no actionable change.",
+            "the sampled frames cannot show. Return JSON with summary (a brief English overview) and reviews "
+            "(one object per shot). Each object needs shot (one-based number) and observations (a short English "
+            "assessment). For an actionable issue also provide feedback (a concise English explanation of "
+            "the change) and prompt (the full replacement English H3 prompt). Otherwise omit feedback and prompt. "
+            "Preserve required references, use only image labels found in the plan, and preserve the duration "
+            "and intended beat. Coordinate replacements with adjacent shots so they join naturally.",
             json.dumps({"story": plan["story"], "shots": plan["shots"], "feedback": feedback,
                         "transition_reviews": transitions}, ensure_ascii=False),
             [], clip_frames=frames, timeout=240,
         )
     if (not isinstance(result, dict) or not isinstance(result.get("summary"), str)
-            or not result["summary"].strip() or not isinstance(result.get("issues"), list)):
+            or not result["summary"].strip() or not isinstance(result.get("reviews"), list)):
         raise ValueError("Qwen returned an invalid film review.")
-    issues = {}
-    for issue in result["issues"]:
-        if not isinstance(issue, dict):
+    reviews = {}
+    slots = {f"image{number}" for number, _ in enumerate(sorted(project.glob("reference-*")), 17)}
+    for item in result["reviews"]:
+        if not isinstance(item, dict):
             raise ValueError("Qwen returned an invalid film review note.")
-        shot, note = issue.get("shot"), issue.get("feedback")
-        if (type(shot) is not int or not 1 <= shot <= len(plan["shots"]) or shot in issues
-                or not isinstance(note, str) or not note.strip()):
+        shot, observation = item.get("shot"), item.get("observations")
+        if (type(shot) is not int or not 1 <= shot <= len(plan["shots"]) or shot in reviews
+                or not isinstance(observation, str) or not observation.strip()):
             raise ValueError("Qwen returned an invalid film review note.")
-        issues[shot] = note.strip()[:MAX_FEEDBACK]
-    return {"summary": result["summary"].strip()[:MAX_FEEDBACK], "issues": issues}
+        entry = {"observations": observation.strip()[:MAX_FEEDBACK]}
+        note, prompt = item.get("feedback"), item.get("prompt")
+        if note or prompt:
+            if not isinstance(note, str) or not note.strip() or not isinstance(prompt, str) or not prompt.strip():
+                raise ValueError("Qwen returned an incomplete shot revision.")
+            original = plan["shots"][shot - 1]
+            prompt = bind_shot_references(prompt.strip(), original, slots,
+                                          existing=referenced_slots(original["prompt"]))
+            if len(prompt) > MAX_REVISED_PROMPT:
+                raise ValueError("Qwen returned a replacement prompt that is too long.")
+            entry.update(feedback=note.strip()[:MAX_FEEDBACK], prompt=prompt)
+        reviews[shot] = entry
+    if len(reviews) != len(plan["shots"]):
+        raise ValueError("Qwen did not review every shot. Try the film review again.")
+    return {"summary": result["summary"].strip()[:MAX_FEEDBACK], "reviews": reviews}

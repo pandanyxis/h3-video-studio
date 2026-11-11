@@ -155,7 +155,31 @@ def stage_revision(parent, payload):
         approved = {"prompt": prompt, "refinement_id": review_id}
     else:
         _, index, feedback = revision_inputs(parent, payload)
-    project = ROOT / uuid.uuid4().hex
+    return save_revision(parent, f"Shot {index + 1} revised", {"revised_shot": index},
+                         {"shot": index, "feedback": feedback, **approved})
+
+
+def stage_film_revision(parent, payload):
+    with QUEUE_LOCK:
+        path = parent / "film-review" / "review.json"
+        if not path.is_file():
+            raise ValueError("Run a film review first.")
+        review = read_json(path)
+        if review["status"] != "ready" or not review.get("id") or payload.get("review_id") != review["id"]:
+            raise ValueError("Choose the current completed film review.")
+        prompts = {int(shot) - 1: item["prompt"] for shot, item in review.get("reviews", {}).items()
+                   if item.get("prompt")}
+        if not prompts:
+            raise ValueError("This film review has no changes to apply.")
+        existing = ROOT / review["id"]
+        if (existing / "status").is_file():
+            return existing
+        return save_revision(parent, "Film review revision", {"revised_shots": sorted(prompts)},
+                             {"prompts": prompts}, project_id=review["id"])
+
+
+def save_revision(parent, title_suffix, changes, revision, *, project_id=None):
+    project = ROOT / (project_id or uuid.uuid4().hex)
     project.mkdir()
     try:
         for path in [parent / "story.txt", parent / "writer-prompt.txt", parent / "image-notes.json",
@@ -163,12 +187,14 @@ def stage_revision(parent, payload):
             if path.is_file():
                 shutil.copyfile(path, project / path.name)
         meta = read_json(parent / "project.json")
+        meta.pop("revised_shot", None)
+        meta.pop("revised_shots", None)
         title = (project / "story.txt").read_text(encoding="utf-8").splitlines()[0][:80]
         atomic_json(project / "project.json", {
-            **meta, "title": f"{title} · Shot {index + 1} revised",
-            "created": datetime.now(timezone.utc).isoformat(), "parent": parent.name, "revised_shot": index,
+            **meta, "title": f"{title} · {title_suffix}",
+            "created": datetime.now(timezone.utc).isoformat(), "parent": parent.name, **changes,
         })
-        atomic_json(project / "revision.json", {"parent": parent.name, "shot": index, "feedback": feedback, **approved})
+        atomic_json(project / "revision.json", {"parent": parent.name, **revision})
         set_status(project, "queued")
         progress(project, "queued")
     except Exception:
@@ -220,7 +246,7 @@ def stage_film_review(project, payload):
             raise ValueError("Wait for the film to finish before reviewing all clips.")
         if directory in ACTIVE_REFINEMENTS:
             raise ValueError("A film review is already running.")
-        review = {"feedback": feedback.strip(), "status": "queued"}
+        review = {"id": uuid.uuid4().hex, "feedback": feedback.strip(), "status": "queued"}
         atomic_json(directory / "review.json", review)
         ACTIVE_REFINEMENTS.add(directory)
         QUEUE.submit(run_refinement, project, directory)
@@ -433,7 +459,7 @@ class StudioHandler(BaseHTTPRequestHandler):
         if self.path == "/":
             return self.reply(200, "text/html; charset=utf-8", (HERE / "studio.html").read_bytes())
         refinement = re.fullmatch(
-            r"/projects/([a-f0-9]{32})/refinements/([a-f0-9]{32})(?:/(frame-[1-9]\d?\.jpg))?", self.path)
+            r"/projects/([a-f0-9]{32})/refinements/([a-f0-9]{32})(?:/((?:frame-[1-9]\d?|previous-last|next-first)\.jpg))?", self.path)
         if refinement:
             directory = ROOT / refinement[1] / "refinements" / refinement[2]
             review = directory / "review.json"
@@ -490,7 +516,7 @@ class StudioHandler(BaseHTTPRequestHandler):
             if not schedule(project, resume=True):
                 return self.json(409, error="This project cannot be resumed.")
             return self.json(202, id=project.name)
-        revision = re.fullmatch(r"/projects/([a-f0-9]{32})/(revisions|refinements|film-review)", self.path)
+        revision = re.fullmatch(r"/projects/([a-f0-9]{32})/(revisions|refinements|film-review|film-revision)", self.path)
         if self.path != "/projects" and not revision:
             return self.json(404, error="Unknown address.")
         if revision and not (ROOT / revision[1] / "status").is_file():
@@ -507,7 +533,10 @@ class StudioHandler(BaseHTTPRequestHandler):
                 return self.json(202, **review)
             if revision and revision[2] == "film-review":
                 return self.json(202, **stage_film_review(ROOT / revision[1], payload))
-            project = stage_revision(ROOT / revision[1], payload) if revision else stage(payload)
+            if revision and revision[2] == "film-revision":
+                project = stage_film_revision(ROOT / revision[1], payload)
+            else:
+                project = stage_revision(ROOT / revision[1], payload) if revision else stage(payload)
         except (ValueError, TypeError, OSError, UnidentifiedImageError, Image.DecompressionBombError, Image.DecompressionBombWarning) as error:
             return self.json(400, error=str(error) if isinstance(error, ValueError) else "The reference image could not be read. Use JPEG, PNG, or WebP.")
         schedule(project)

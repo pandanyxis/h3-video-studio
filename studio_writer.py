@@ -132,6 +132,8 @@ def suggest_revision(plan, index, feedback, pictures, writer_prompt, *, clip_fra
         instructions += (
             "Review the rendered frames against the requested shot, reference images and feedback. "
             "Also return a short string named observations describing what the sampled frames show and what you changed. "
+            "If adjacent boundary frames are supplied, use the previous shot's last frame to anchor the revised "
+            "opening and the next shot's first frame to anchor the revised ending. Account for each planned cut. "
             "Distinguish visible evidence from uncertainty. Do not infer sounds or action between sampled frames. "
             "Use rendered frames as evidence only; never refer to them as H3 image slots. "
         )

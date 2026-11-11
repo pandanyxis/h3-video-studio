@@ -20,7 +20,7 @@ Add a story and reference images, then click **Make my film**. Add optional note
 
 After rendering, Studio automatically asks Qwen to compare frames from the end of each clip with frames from the start of the next, taking planned cuts into account. Open the incoming shot under **Review clips** to see the verdict and add any suggestion to **Refine clip** before deciding whether to render a new take. An unavailable review still allows the film to export.
 
-Choose **Review all clips** to review the completed film in one pass. Add optional feedback for Qwen to focus on. The review uses the original story, shot plan, sampled frames from every clip, and any available transition reports. It saves a summary and actionable notes you can copy into **Refine clip**.
+Choose **Review all clips** to review the completed film in one pass. Add optional feedback for Qwen to focus on. The review uses the original story, shot plan, sampled frames from every clip, and any available transition reports. It saves a summary and an assessment for each shot. Use **Apply changes and render** to render the proposed changes together as a new film version. Individual **Refine clip** reviews also include the previous clip's last frame and the next clip's first frame when available.
 
 Studio saves the shot plan, prompts, and render request for recovery. If a render is interrupted, open its production log and resume the project. Recovery requires the project files to remain on disk. Temporary storage is erased when the pod stops, so download your films and clips first.
 

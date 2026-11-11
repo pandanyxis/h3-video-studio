@@ -222,6 +222,7 @@ summary { cursor:pointer; font-size:13px; font-weight:550; }
           </form>
           <p id="film-review-status" role="status"></p>
           <div id="film-review-findings"></div>
+          <button id="apply-film-review" type="button" class="primary" hidden></button>
         </section>
         <div id="shots"></div>
       </section>
@@ -322,9 +323,19 @@ function showFilmReview(project) {
   $('#film-review-status').textContent = status[review?.status] || '';
   const findings = $('#film-review-findings');
   findings.replaceChildren();
-  for (const [shot, note] of Object.entries(review?.issues || {})) {
+  const reviews = Object.entries(review?.reviews || {});
+  const changes = reviews.filter(([, item]) => item.prompt).length;
+  const apply = $('#apply-film-review');
+  apply.hidden = review?.status !== 'ready' || !changes;
+  apply.disabled = false;
+  apply.dataset.reviewId = review?.id || '';
+  apply.textContent = 'Apply changes and render ' + changes + (changes === 1 ? ' shot' : ' shots');
+  for (const [shot, itemReview] of reviews) {
     const item = document.createElement('p');
-    item.textContent = 'Shot ' + shot + ' · ' + note + ' ';
+    item.textContent = 'Shot ' + shot + ' · ' + itemReview.observations;
+    findings.append(item);
+    if (!itemReview.feedback) continue;
+    item.append(' ' + itemReview.feedback + ' ');
     const button = document.createElement('button');
     button.type = 'button';
     button.className = 'secondary';
@@ -334,13 +345,25 @@ function showFilmReview(project) {
       const feedback = detail?.querySelector('.refine-panel textarea');
       if (!feedback) return;
       detail.open = true;
-      feedback.value = [feedback.value.trim(), note].filter(Boolean).join('\n\n').slice(0, feedback.maxLength);
+      feedback.value = [feedback.value.trim(), itemReview.feedback].filter(Boolean).join('\n\n').slice(0, feedback.maxLength);
       feedback.focus();
     });
     item.append(button);
-    findings.append(item);
   }
 }
+$('#apply-film-review').addEventListener('click', async event => {
+  const button = event.currentTarget;
+  const generation = state.generation;
+  button.disabled = true;
+  try {
+    const revised = await post('/projects/' + state.id + '/film-revision', {review_id:button.dataset.reviewId});
+    if (generation === state.generation) location.hash = revised.id;
+  } catch (error) {
+    if (generation !== state.generation) return;
+    button.disabled = false;
+    $('#film-review-status').textContent = error.message;
+  }
+});
 $('#film-review-form').addEventListener('submit', async event => {
   event.preventDefault();
   const form = event.currentTarget;
@@ -413,9 +436,12 @@ function refineForm(base, index, video, savedReview) {
       return;
     }
     reviewId = review.id;
-    status.textContent = 'Qwen reviewed ' + review.frames.length + ' frames. Edit the prompt before starting a new render.';
-    evidence.replaceChildren(...review.frames.map(frame =>
-      thumbnail(endpoint + '/' + frame.file, frame.seconds.toFixed(2) + ' s')));
+    const neighbors = review.neighbor_frames || [];
+    status.textContent = 'Qwen reviewed ' + (review.frames.length + neighbors.length) + ' frames. Edit the prompt before starting a new render.';
+    const frames = [...neighbors.filter(frame => frame.file === 'previous-last.jpg'), ...review.frames,
+                    ...neighbors.filter(frame => frame.file === 'next-first.jpg')];
+    evidence.replaceChildren(...frames.map(frame =>
+      thumbnail(endpoint + '/' + frame.file, frame.label || frame.seconds.toFixed(2) + ' s')));
     if (review.frames.length && !video.poster) video.poster = endpoint + '/' + review.frames[0].file;
     panel.querySelector('.refine-observations').textContent = review.observations;
     prompt.value = review.prompt;
@@ -594,7 +620,8 @@ function showProject(project) {
       if (project.transitions?.[i]) detail.append(transitionReview(i,project.transitions[i]));
       detail.append(refineForm(base,i,detail.querySelector('video'),project.refinements?.[i]));
     }
-    if (project.parent && project.revised_shot === i && !detail.querySelector('.previous-take')) {
+    if (project.parent && (project.revised_shots?.includes(i) ?? project.revised_shot === i)
+        && !detail.querySelector('.previous-take')) {
       const comparison = document.createElement('details');
       comparison.className = 'previous-take';
       const heading = document.createElement('summary');

@@ -34,18 +34,25 @@ def wait_for_models(client, project, profile_id, *, needs_qwen, can_cancel=True)
 
 def prepare_revision(project, revision, pictures, writer_prompt):
     parent = read_json(project.parent / revision["parent"] / "production.json")
-    index = revision["shot"]
     plan, document = parent["plan"], parent["document"]
     document.setdefault("consumer", {})["studio_exports_clips"] = True
-    if "prompt" in revision:
-        plan["shots"][index]["prompt"] = revision["prompt"]
+    if "prompts" in revision:
+        prompts = {int(index): prompt for index, prompt in revision["prompts"].items()}
     else:
-        progress(project, "writing", total=len(plan["shots"]))
-        revise_shot(plan, index, revision["feedback"], pictures, writer_prompt,
-                    reference_notes=read_reference_notes(project))
-    document["timeline"]["boxes"][index]["prompt"] = plan["shots"][index]["prompt"]
+        index = revision["shot"]
+        if "prompt" not in revision:
+            progress(project, "writing", total=len(plan["shots"]))
+            revise_shot(plan, index, revision["feedback"], pictures, writer_prompt,
+                        reference_notes=read_reference_notes(project))
+        prompts = {index: revision.get("prompt", plan["shots"][index]["prompt"])}
+    ids = []
+    for index, prompt in sorted(prompts.items()):
+        plan["shots"][index]["prompt"] = prompt
+        box = document["timeline"]["boxes"][index]
+        box["prompt"] = prompt
+        ids.append(box["id"])
     return {"plan": plan, "document": document, "project_id": parent["project_id"],
-            "selection": {"kind": "boxes", "ids": [f"shot-{index + 1:02d}"], "rerender": True},
+            "selection": {"kind": "boxes", "ids": ids, "rerender": True},
             "key": uuid.uuid4().hex}
 
 
@@ -85,7 +92,8 @@ def produce(args):
     state = read_json(receipt) if receipt.exists() else {}
     submitted = "job_id" in state or state.get("submitting", False)
     wait_for_models(client, project, args.profile,
-                    needs_qwen=not state and ("prompt" not in revision if revision else not plan_file.exists()),
+                    needs_qwen=not state and (
+                        not ("prompt" in revision or "prompts" in revision) if revision else not plan_file.exists()),
                     can_cancel=not submitted)
     if receipt.exists():
         if not submitted:
