@@ -48,7 +48,7 @@ RUN --mount=from=builder,source=/opt/cuda-link,target=/opt/cuda-link \
     && LD_LIBRARY_PATH=/opt/cuda-link:/opt/llama/lib:$LD_LIBRARY_PATH /opt/llama/bin/llama-server --version
 COPY requirements.txt /opt/studio/requirements.txt
 RUN /opt/venv/bin/pip install --no-cache-dir -r /opt/studio/requirements.txt
-COPY plan_story.py prepare_timeline.py export_project.py run_studio.py studio_writer.py studio_storage.py studio_profiles.py studio_render.py studio_web.py studio.html /opt/studio/
+COPY plan_story.py prepare_timeline.py export_project.py run_studio.py studio_writer.py studio_storage.py studio_profiles.py studio_render.py studio_refine.py studio_web.py studio.html /opt/studio/
 COPY runpod/h3-verified-preview.patch /opt/combined/
 RUN git -C /ComfyUI/custom_nodes/ComfyUI-H3-Continuity-Studio apply /opt/combined/h3-verified-preview.patch \
     && python3 /opt/studio/studio_profiles.py

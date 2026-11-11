@@ -21,14 +21,16 @@ from PIL import Image, UnidentifiedImageError
 
 from prepare_timeline import ASPECT_SIZES, FPS
 from studio_profiles import MAX_LORAS, SELECTION_PREFIX, default_settings, selection_profile
+from studio_refine import MAX_REVISED_PROMPT, refine_clip, revision_inputs
 from studio_render import RenderClient, RenderError
-from studio_storage import atomic_json, progress, read_json
-from studio_writer import DEFAULT_WRITER_PROMPT, MAX_WRITER_PROMPT
+from studio_storage import atomic_json, gpu_lock, progress, read_json
+from studio_writer import DEFAULT_WRITER_PROMPT, MAX_WRITER_PROMPT, bind_shot_references, referenced_slots
 
 ROOT = Path(os.environ.get("STUDIO_PROJECTS", "/workspace/studio/projects"))
 HERE = Path(__file__).resolve().parent
 QUEUE = ThreadPoolExecutor(max_workers=1)
 ACTIVE = set()
+ACTIVE_REFINEMENTS = set()
 QUEUE_LOCK = threading.Lock()
 MAX_IMAGE = 8 * 1024 * 1024
 MAX_REQUEST = 100 * 1024 * 1024
@@ -117,14 +119,31 @@ def set_status(project, status):
 
 
 def stage_revision(parent, payload):
-    if not (parent / "film.mp4").is_file() or not (parent / "production.json").is_file():
-        raise ValueError("Wait for the film to finish before revising a shot.")
-    index, feedback = payload.get("shot"), payload.get("feedback")
-    plan = read_json(parent / "production.json")["plan"]
-    if type(index) is not int or not 0 <= index < len(plan["shots"]):
-        raise ValueError("Choose an existing shot.")
-    if not isinstance(feedback, str) or not feedback.strip() or len(feedback) > 4000:
-        raise ValueError("Describe what should change in up to 4,000 characters.")
+    approved = {}
+    if "refinement_id" in payload:
+        review_id = payload["refinement_id"]
+        if not isinstance(review_id, str) or not re.fullmatch(r"[a-f0-9]{32}", review_id):
+            raise ValueError("Choose a completed clip refinement.")
+        review_path = parent / "refinements" / review_id / "review.json"
+        if not review_path.is_file():
+            raise ValueError("Clip refinement not found.")
+        review = read_json(review_path)
+        if review["status"] != "ready" or payload.get("shot") != review["shot"]:
+            raise ValueError("Choose a completed refinement for this shot.")
+        plan, index, feedback = revision_inputs(parent, review)
+        prompt = payload.get("prompt")
+        if not isinstance(prompt, str) or not prompt.strip() or len(prompt) > MAX_REVISED_PROMPT:
+            raise ValueError(f"Enter a prompt of up to {MAX_REVISED_PROMPT:,} characters.")
+        shot = plan["shots"][index]
+        slots = {f"image{number}" for number, _ in enumerate(sorted(parent.glob("reference-*")), 17)}
+        prompt = prompt.strip()
+        bound = bind_shot_references(prompt, shot, slots, existing=referenced_slots(shot["prompt"]))
+        if bound != prompt:
+            missing = ", ".join(f"@{slot}" for slot in sorted(referenced_slots(bound) - referenced_slots(prompt)))
+            raise ValueError(f"Keep the required image references in the approved prompt: {missing}.")
+        approved = {"prompt": prompt, "refinement_id": review_id}
+    else:
+        _, index, feedback = revision_inputs(parent, payload)
     project = ROOT / uuid.uuid4().hex
     project.mkdir()
     try:
@@ -135,15 +154,44 @@ def stage_revision(parent, payload):
         title = (project / "story.txt").read_text(encoding="utf-8").splitlines()[0][:80]
         atomic_json(project / "project.json", {
             **meta, "title": f"{title} · Shot {index + 1} revised",
-            "created": datetime.now(timezone.utc).isoformat(), "parent": parent.name,
+            "created": datetime.now(timezone.utc).isoformat(), "parent": parent.name, "revised_shot": index,
         })
-        atomic_json(project / "revision.json", {"parent": parent.name, "shot": index, "feedback": feedback.strip()})
+        atomic_json(project / "revision.json", {"parent": parent.name, "shot": index, "feedback": feedback, **approved})
         set_status(project, "queued")
         progress(project, "queued")
     except Exception:
         shutil.rmtree(project)
         raise
     return project
+
+
+def run_refinement(project, directory):
+    file = directory / "review.json"
+    review = {}
+    try:
+        review = read_json(file)
+        atomic_json(file, {**review, "status": "reviewing"})
+        with gpu_lock():
+            result = refine_clip(project, directory, review)
+        atomic_json(file, {**review, **result, "status": "ready", "max_prompt_length": MAX_REVISED_PROMPT})
+    except Exception as error:
+        print(f"Studio refinement {directory.name}: {error}", file=sys.stderr, flush=True)
+        message = str(error) if isinstance(error, ValueError) else "Studio could not review the clip. Try again."
+        atomic_json(file, {**review, "status": "failed", "error": message})
+    finally:
+        with QUEUE_LOCK:
+            ACTIVE_REFINEMENTS.discard(directory)
+
+
+def stage_refinement(project, payload):
+    with QUEUE_LOCK:
+        _, index, feedback = revision_inputs(project, payload)
+        directory = project / "refinements" / uuid.uuid4().hex
+        review = {"id": directory.name, "shot": index, "feedback": feedback, "status": "queued"}
+        atomic_json(directory / "review.json", review)
+        ACTIVE_REFINEMENTS.add(directory)
+        QUEUE.submit(run_refinement, project, directory)
+    return review
 
 
 def project_data(project, details=False):
@@ -155,6 +203,11 @@ def project_data(project, details=False):
     result = {**meta, "id": project.name, "status": status, "progress": state}
     if details:
         result["can_revise"] = status == "done" and (project / "production.json").is_file()
+        latest_reviews = {}
+        for path in sorted(project.glob("refinements/*/review.json"), key=lambda file: file.parent.stat().st_mtime):
+            review = read_json(path)
+            latest_reviews[review["shot"]] = review
+        result["refinements"] = latest_reviews
         result["story"] = (project / "story.txt").read_text(encoding="utf-8")
         result["references"] = [path.name for path in sorted(project.glob("reference-*"))]
         result["clips"] = [path.name for path in sorted((project / "clips").glob("shot-*.mp4"))]
@@ -232,7 +285,7 @@ def request_cancellation(projects):
 def clear_projects():
     with QUEUE_LOCK:
         projects = managed_projects()
-        if ACTIVE or any((project / "status").read_text(encoding="utf-8") in ("queued", "running")
+        if ACTIVE or ACTIVE_REFINEMENTS or any((project / "status").read_text(encoding="utf-8") in ("queued", "running")
                          for project in projects):
             raise ValueError("Stop active productions before clearing projects.")
         for project in projects:
@@ -341,6 +394,19 @@ class StudioHandler(BaseHTTPRequestHandler):
             return self.json(200, **options, defaults=defaults, max_loras=MAX_LORAS)
         if self.path == "/":
             return self.reply(200, "text/html; charset=utf-8", (HERE / "studio.html").read_bytes())
+        refinement = re.fullmatch(
+            r"/projects/([a-f0-9]{32})/refinements/([a-f0-9]{32})(?:/(frame-[1-3]\.jpg))?", self.path)
+        if refinement:
+            directory = ROOT / refinement[1] / "refinements" / refinement[2]
+            review = directory / "review.json"
+            if not review.is_file():
+                return self.json(404, error="Clip refinement not found.")
+            if refinement[3]:
+                frame = directory / refinement[3]
+                if not frame.is_file():
+                    return self.json(404, error="Review frame not found.")
+                return self.serve_file(frame)
+            return self.json(200, **read_json(review))
         if self.path == "/projects":
             projects = [project_data(project) for project in managed_projects()]
             return self.json(200, projects=sorted(projects, key=lambda item: item.get("created", ""), reverse=True))
@@ -386,18 +452,21 @@ class StudioHandler(BaseHTTPRequestHandler):
             if not schedule(project, resume=True):
                 return self.json(409, error="This project cannot be resumed.")
             return self.json(202, id=project.name)
-        revision = re.fullmatch(r"/projects/([a-f0-9]{32})/revisions", self.path)
+        revision = re.fullmatch(r"/projects/([a-f0-9]{32})/(revisions|refinements)", self.path)
         if self.path != "/projects" and not revision:
             return self.json(404, error="Unknown address.")
         if revision and not (ROOT / revision[1] / "status").is_file():
             return self.json(404, error="Project not found.")
         try:
             length = int(self.headers.get("Content-Length", "0"))
-            if not 0 < length <= (32 * 1024 if revision else MAX_REQUEST):
+            if not 0 < length <= (192 * 1024 if revision else MAX_REQUEST):
                 return self.json(413, error="The upload is too large or empty.")
             payload = json.loads(self.rfile.read(length))
             if not isinstance(payload, dict):
                 raise ValueError("Invalid project.")
+            if revision and revision[2] == "refinements":
+                review = stage_refinement(ROOT / revision[1], payload)
+                return self.json(202, **review)
             project = stage_revision(ROOT / revision[1], payload) if revision else stage(payload)
         except (ValueError, TypeError, OSError, UnidentifiedImageError, Image.DecompressionBombError, Image.DecompressionBombWarning) as error:
             return self.json(400, error=str(error) if isinstance(error, ValueError) else "The reference image could not be read. Use JPEG, PNG, or WebP.")
@@ -425,6 +494,14 @@ def main():
     for status_file in ROOT.glob("*/status"):
         if status_file.read_text(encoding="utf-8") in ("queued", "running"):
             schedule(status_file.parent)
+    for project in managed_projects():
+        for review_file in project.glob("refinements/*/review.json"):
+            review = read_json(review_file)
+            if review["status"] in ("queued", "reviewing"):
+                directory = review_file.parent
+                with QUEUE_LOCK:
+                    ACTIVE_REFINEMENTS.add(directory)
+                    QUEUE.submit(run_refinement, project, directory)
     print(f"H3 Video Studio {server.public_origin or f'http://localhost:{args.port}'}", flush=True)
     try:
         server.serve_forever()

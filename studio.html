@@ -63,8 +63,15 @@ select,input[type=number] { width:100%; border:1px solid #3a485c; border-radius:
 .writer-settings textarea { min-height:240px; }
 .writer-settings button { margin-top:10px; }
 .shot-review { display:grid; gap:8px; margin-top:12px; }
-.shot-review textarea { min-height:90px; }
+.shot-review textarea { display:block; min-height:90px; margin-top:5px; font-weight:400; }
 .shot-review button { justify-self:start; }
+.refine-panel { display:grid; gap:14px; padding:16px; margin-top:16px; border:1px solid var(--line); border-radius:10px; background:#101822; }
+.refine-panel h3,.refine-panel p { margin:0; }
+.refine-evidence { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; }
+.refine-evidence figure { width:auto; }
+.refine-evidence img { width:100%; height:auto; aspect-ratio:16/9; object-fit:contain; background:#0c1118; }
+.refine-proposal { display:grid; gap:10px; }
+.refine-proposal textarea { min-height:140px; }
 .shot-video { display:block; width:100%; max-height:360px; margin:12px 0; border-radius:8px; background:#0c1118; }
 input[type=file] { width:100%; border:1px dashed #42536b; padding:17px; border-radius:8px; color:var(--muted); }
 input::file-selector-button { background:#26354a; border:0; border-radius:5px; color:#e9eef6; padding:7px 10px; margin-right:12px; cursor:pointer; }
@@ -250,6 +257,96 @@ function thumbnail(source, caption) {
   figure.append(image,label);
   return figure;
 }
+function refineForm(base, index, video, savedReview) {
+  const generation = state.generation;
+  const panel = document.createElement('section');
+  panel.className = 'refine-panel';
+  panel.innerHTML = `
+    <h3>Refine clip</h3>
+    <form class="shot-review">
+      <label>What should change?
+        <textarea maxlength="4000" required placeholder="For example, have her look at the door before she stands."></textarea>
+      </label>
+      <button type="submit" class="secondary">Draft revision</button>
+    </form>
+    <p class="hint refine-status" role="status"></p>
+    <div class="refine-proposal" hidden>
+      <div class="refine-evidence" aria-label="Frames reviewed by Qwen"></div>
+      <p class="refine-observations"></p>
+      <form class="shot-review">
+        <label>Proposed H3 prompt
+          <textarea required></textarea>
+        </label>
+        <button type="submit" class="primary">Render new take</button>
+      </form>
+    </div>`;
+  const forms = panel.querySelectorAll('form');
+  const [feedback, prompt] = panel.querySelectorAll('textarea');
+  const [draftButton, renderButton] = panel.querySelectorAll('button');
+  const status = panel.querySelector('.refine-status');
+  const proposal = panel.querySelector('.refine-proposal');
+  const evidence = panel.querySelector('.refine-evidence');
+  let reviewId;
+
+  async function showReview(review) {
+    if (generation !== state.generation) return;
+    const endpoint = base + '/refinements/' + review.id;
+    draftButton.disabled = ['queued','reviewing'].includes(review.status);
+    if (draftButton.disabled) {
+      status.textContent = review.status === 'queued' ? 'Clip review queued…' : 'Qwen is reviewing the clip frames…';
+      setTimeout(async () => {
+        if (generation !== state.generation) return;
+        try { await showReview(await api(endpoint)); }
+        catch (error) {
+          draftButton.disabled = false;
+          status.textContent = error.message;
+        }
+      }, 3000);
+      return;
+    }
+    if (review.status === 'failed') {
+      status.textContent = review.error || 'The clip review could not be completed.';
+      return;
+    }
+    reviewId = review.id;
+    status.textContent = 'Review or edit the prompt before starting a new render.';
+    evidence.replaceChildren(...review.frames.map(frame =>
+      thumbnail(endpoint + '/' + frame.file, frame.seconds.toFixed(2) + ' s')));
+    if (review.frames.length && !video.poster) video.poster = endpoint + '/' + review.frames[0].file;
+    panel.querySelector('.refine-observations').textContent = review.observations;
+    prompt.value = review.prompt;
+    prompt.maxLength = review.max_prompt_length;
+    proposal.hidden = false;
+  }
+
+  forms[0].addEventListener('submit',async event => {
+    event.preventDefault();
+    draftButton.disabled = true;
+    proposal.hidden = true;
+    status.textContent = 'Submitting clip review…';
+    try { await showReview(await post(base + '/refinements',{shot:index,feedback:feedback.value})); }
+    catch (error) {
+      draftButton.disabled = false;
+      status.textContent = error.message;
+    }
+  });
+  forms[1].addEventListener('submit',async event => {
+    event.preventDefault();
+    renderButton.disabled = true;
+    try {
+      const revised = await post(base + '/revisions',{shot:index,refinement_id:reviewId,prompt:prompt.value});
+      if (generation === state.generation) location.hash = revised.id;
+    } catch (error) {
+      status.textContent = error.message;
+      renderButton.disabled = false;
+    }
+  });
+  if (savedReview) {
+    feedback.value = savedReview.feedback;
+    showReview(savedReview);
+  }
+  return panel;
+}
 function stepIndex(stage) {
   return stages.indexOf(stage === 'references' ? 'rendering' : stage);
 }
@@ -379,31 +476,22 @@ function showProject(project) {
       clip.textContent = 'Download shot ' + (i+1);
       detail.append(video,clip);
     }
-    if (project.can_revise && !detail.querySelector('form')) {
-      const form = document.createElement('form');
-      form.className = 'shot-review';
-      const label = document.createElement('label');
-      label.textContent = 'What should change in shot ' + (i+1) + '?';
-      const feedback = document.createElement('textarea');
-      feedback.id = 'shot-feedback-' + i;
-      label.htmlFor = feedback.id;
-      feedback.required = true;
-      feedback.maxLength = 4000;
-      feedback.placeholder = 'For example, have both people pause before one extends a hand.';
-      const button = document.createElement('button');
-      button.className = 'secondary';
-      button.textContent = 'Revise shot and create a new film version';
-      form.append(label,feedback,button);
-      form.addEventListener('submit',async event => {
-        event.preventDefault();
-        button.disabled = true;
-        try {
-          const revised = await post(base + '/revisions',{shot:i,feedback:feedback.value});
-          location.hash = revised.id;
-        } catch (error) { $('#notice').textContent = error.message; }
-        finally { button.disabled = false; }
-      });
-      detail.append(form);
+    if (project.can_revise && !detail.querySelector('.refine-panel')) {
+      detail.append(refineForm(base,i,detail.querySelector('video'),project.refinements?.[i]));
+    }
+    if (project.parent && project.revised_shot === i && !detail.querySelector('.previous-take')) {
+      const comparison = document.createElement('details');
+      comparison.className = 'previous-take';
+      const heading = document.createElement('summary');
+      heading.textContent = 'Compare previous take';
+      const previous = document.createElement('video');
+      previous.className = 'shot-video';
+      previous.controls = true;
+      previous.playsInline = true;
+      previous.preload = 'none';
+      previous.src = '/projects/' + project.parent + '/clips/' + filename;
+      comparison.append(heading,previous);
+      detail.append(comparison);
     }
   });
 }

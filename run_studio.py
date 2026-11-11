@@ -36,8 +36,11 @@ def prepare_revision(project, revision, pictures, writer_prompt):
     index = revision["shot"]
     plan, document = parent["plan"], parent["document"]
     document.setdefault("consumer", {})["studio_exports_clips"] = True
-    progress(project, "writing", total=len(plan["shots"]))
-    revise_shot(plan, index, revision["feedback"], pictures, writer_prompt)
+    if "prompt" in revision:
+        plan["shots"][index]["prompt"] = revision["prompt"]
+    else:
+        progress(project, "writing", total=len(plan["shots"]))
+        revise_shot(plan, index, revision["feedback"], pictures, writer_prompt)
     document["timeline"]["boxes"][index]["prompt"] = plan["shots"][index]["prompt"]
     return {"plan": plan, "document": document, "project_id": parent["project_id"],
             "selection": {"kind": "boxes", "ids": [f"shot-{index + 1:02d}"], "rerender": True},
@@ -76,11 +79,12 @@ def produce(args):
     receipt = project / "production.json"
     plan_file = project / "shots.json"
     revision_file = project / "revision.json"
-    is_revision = revision_file.is_file()
+    revision = read_json(revision_file) if revision_file.is_file() else None
     state = read_json(receipt) if receipt.exists() else {}
     submitted = "job_id" in state or state.get("submitting", False)
     wait_for_models(client, project, args.profile,
-                    needs_qwen=not state and (is_revision or not plan_file.exists()), can_cancel=not submitted)
+                    needs_qwen=not state and ("prompt" not in revision if revision else not plan_file.exists()),
+                    can_cancel=not submitted)
     if receipt.exists():
         if not submitted:
             check_cancelled(project)
@@ -92,8 +96,8 @@ def produce(args):
         pictures = [(f"image{index}", path) for index, path in enumerate(args.references, 17)]
         instructions = project / "writer-prompt.txt"
         writer_prompt = instructions.read_text(encoding="utf-8") if instructions.is_file() else DEFAULT_WRITER_PROMPT
-        if is_revision:
-            state = prepare_revision(project, read_json(revision_file), pictures, writer_prompt)
+        if revision:
+            state = prepare_revision(project, revision, pictures, writer_prompt)
         else:
             if plan_file.exists():
                 plan = read_json(plan_file)

@@ -29,7 +29,7 @@ def qwen_ready():
         return response.status == 200
 
 
-def ask_qwen(instructions, text, pictures):
+def ask_qwen(instructions, text, pictures, *, clip_frames=()):
     content = [{"type": "text", "text": text}]
     for slot, path in pictures:
         mime = mimetypes.guess_type(path.name)[0]
@@ -37,6 +37,12 @@ def ask_qwen(instructions, text, pictures):
         content.extend([
             {"type": "text", "text": f"Reference @{slot}"},
             {"type": "image_url", "image_url": {"url": f"data:{mime};base64,{encoded}"}},
+        ])
+    for timestamp, path in clip_frames:
+        encoded = base64.b64encode(path.read_bytes()).decode("ascii")
+        content.extend([
+            {"type": "text", "text": f"Rendered clip frame at {timestamp:.2f} seconds. This is review evidence."},
+            {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{encoded}"}},
         ])
     key = os.environ.get("LLAMA_API_KEY")
     if not key:
@@ -94,26 +100,40 @@ def bind_shot_references(prompt, shot, slots, *, existing=()):
     return prompt
 
 
-def revise_shot(plan, index, feedback, pictures, writer_prompt):
+def suggest_revision(plan, index, feedback, pictures, writer_prompt, *, clip_frames=()):
     shots = plan["shots"]
     shot = shots[index]
-    written = ask_qwen(
+    instructions = (
         "Revise only the selected English MiniMax H3 video prompt according to the user's feedback. "
         "Keep the shot duration, reference identities and continuity with the adjacent shots. "
-        "Return a JSON object with one nonempty string named prompt. Use only supplied @imageN labels.\n\n"
-        + writer_prompt,
+        "Return a JSON object with a nonempty string named prompt. Use only supplied @imageN labels. "
+    )
+    if clip_frames:
+        instructions += (
+            "Review the rendered frames against the requested shot, reference images and feedback. "
+            "Also return a short string named observations describing what the sampled frames show and what you changed. "
+            "Distinguish visible evidence from uncertainty. Do not infer sounds or action between sampled frames. "
+            "Use rendered frames as evidence only; never refer to them as H3 image slots. "
+        )
+    written = ask_qwen(
+        instructions + "\n\n" + writer_prompt,
         json.dumps({
             "story": plan["story"], "previous": shots[index - 1] if index else None,
             "shot": shot, "next": shots[index + 1] if index + 1 < len(shots) else None,
             "feedback": feedback,
-        }, ensure_ascii=False), pictures,
+        }, ensure_ascii=False), pictures, clip_frames=clip_frames,
     )
     prompt = written.get("prompt") if isinstance(written, dict) else None
     if not isinstance(prompt, str) or not prompt.strip():
         raise ValueError("The Writer did not return a revised prompt for this shot.")
     slots = {slot for slot, _ in pictures}
-    shot["prompt"] = bind_shot_references(
-        prompt.strip(), shot, slots, existing=referenced_slots(shot["prompt"]))
+    prompt = bind_shot_references(prompt.strip(), shot, slots, existing=referenced_slots(shot["prompt"]))
+    observations = written.get("observations")
+    return {"prompt": prompt, "observations": observations.strip() if isinstance(observations, str) else ""}
+
+
+def revise_shot(plan, index, feedback, pictures, writer_prompt):
+    plan["shots"][index]["prompt"] = suggest_revision(plan, index, feedback, pictures, writer_prompt)["prompt"]
 
 
 def plan_and_write(story, pictures, project=None, writer_prompt=DEFAULT_WRITER_PROMPT):

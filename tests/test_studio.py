@@ -224,6 +224,40 @@ class WebTests(unittest.TestCase):
         self.assertFalse(active.exists())
         self.assertFalse(finished.exists())
 
+    def test_refinement_drafts_without_rendering_and_uses_the_approved_prompt(self):
+        parent = web.stage({"story": "A boat", "images": [image_data()]})
+        (parent / "film.mp4").write_bytes(b"original")
+        plan = {**shot_plan(1), "story": "A boat"}
+        plan["shots"][0]["prompt"] = "@image17 boat moves."
+        document = timeline_document(plan, parent.name, "studio-turbo8")
+        web.atomic_json(parent / "production.json", {
+            "plan": plan, "document": document, "project_id": "native-project",
+        })
+        with patch.object(web.QUEUE, "submit") as submit, patch.object(web, "schedule") as schedule:
+            with self.post(f"/projects/{parent.name}/refinements", {
+                "shot": 0, "feedback": "Make the boat slow down.",
+            }) as response:
+                self.assertEqual(response.status, 202)
+                draft = json.load(response)
+            schedule.assert_not_called()
+            task, project, directory = submit.call_args.args
+            result = {"prompt": "@image17 boat slows.", "observations": "The boat maintains its speed.", "frames": []}
+            with patch.object(web, "refine_clip", return_value=result), patch.object(web, "gpu_lock"):
+                task(project, directory)
+            with urlopen(self.url + f"/projects/{parent.name}/refinements/{draft['id']}") as response:
+                self.assertEqual(json.load(response)["prompt"], result["prompt"])
+            approved = "@image17 boat slows and settles near the dock."
+            with self.post(f"/projects/{parent.name}/revisions", {
+                "shot": 0, "refinement_id": draft["id"], "prompt": approved,
+            }) as response:
+                child = web.ROOT / json.load(response)["id"]
+            schedule.assert_called_once_with(child)
+            with patch.object(run_studio, "revise_shot") as writer_call:
+                state = run_studio.prepare_revision(child, read_json(child / "revision.json"), [], "")
+                writer_call.assert_not_called()
+            self.assertEqual(state["document"]["timeline"]["boxes"][0]["prompt"], approved)
+            self.assertEqual((parent / "film.mp4").read_bytes(), b"original")
+
     def test_runpod_proxy_requires_login_and_its_own_https_origin(self):
         self.server.public_origin = "https://testpod-8190.proxy.runpod.net"
         self.server.studio_auth = b"Basic " + base64.b64encode(b"studio:local-test-password")

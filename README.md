@@ -16,7 +16,7 @@ Use an RTX PRO 6000 Blackwell with 96 GB VRAM and CUDA 13 or newer. The template
 
 Set `STUDIO_PASSWORD` to a password of at least 16 characters. Open **Connect → HTTP Service (8190)** and sign in as `studio`. Each pod has its own HTTPS URL.
 
-Add a story and reference images, then click **Make my film**. The project page shows the active step, individual clips as they become available, and the finished MP4. Use **Review clips** to request a revision and make a new film version. Use **Stop production** or **Stop all productions** to request cancellation. **Clear projects** deletes saved Studio projects and exports after all productions stop.
+Add a story and reference images, then click **Make my film**. The project page shows the active step, individual clips as they become available, and the finished MP4. Under **Review clips**, open a shot and use **Refine clip** to draft a revision from sampled frames and your feedback. Review or edit the proposed prompt before choosing **Render new take**. Studio saves the result as a separate film version with access to the previous take. Use **Stop production** or **Stop all productions** to request cancellation. **Clear projects** deletes saved Studio projects and exports after all productions stop.
 
 Studio saves the shot plan, prompts, and render request for recovery. If a render is interrupted, open its production log and resume the project. Recovery requires the project files to remain on disk. Temporary storage is erased when the pod stops, so download your films and clips first.
 
