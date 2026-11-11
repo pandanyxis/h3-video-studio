@@ -48,6 +48,7 @@ def timeline_document(plan, name, profile, aspect=None):
     return {
         "name": name,
         "profile": profile,
+        "consumer": {"studio_exports_clips": True},
         "settings": {"width": width, "height": height, "context_frames": context,
                      "carry_audio": True, "ref_image_size": "match"},
         "timeline": {"version": 1, "boxes": boxes},

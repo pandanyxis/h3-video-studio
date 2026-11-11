@@ -10,3 +10,17 @@ diff --git a/h3_continuity/timeline_api/jobs.py b/h3_continuity/timeline_api/job
                         for attempt in job["attempts"]]
      result["progress"]["current"] = next((attempt["unit_id"] for attempt in job["attempts"] if attempt["state"] != "verified"), None)
      result["blocked_by"] = copy.deepcopy(blocked_by)
+diff --git a/h3_continuity/timeline_api/artifacts.py b/h3_continuity/timeline_api/artifacts.py
+index 42e64c5..2b3e087 100644
+--- a/h3_continuity/timeline_api/artifacts.py
++++ b/h3_continuity/timeline_api/artifacts.py
+@@ -155,6 +155,9 @@ class Artifacts:
+             if job["selection"].get("rebuild_continuity"):
+                 # This job intentionally delivered one new take; dependent clips now await Render remaining.
+                 return artifacts
++            if (project.get("consumer", {}).get("studio_exports_clips") is True
++                    and all(unit["kind"] == "box" for unit in job["plan"]["units"])):
++                return artifacts
+             owner = {"project_id":project["id"],"job_id":job["id"],"revision":job["revision"],
+                      "profile_sha256":job["profile_sha256"],"owner_token":job["owner_token"]}
+             current = native.status(project,materialize=True,managed_owner=owner)

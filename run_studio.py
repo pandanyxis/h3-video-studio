@@ -33,6 +33,7 @@ def prepare_revision(project, revision, pictures, writer_prompt):
     parent = read_json(project.parent / revision["parent"] / "production.json")
     index = revision["shot"]
     plan, document = parent["plan"], parent["document"]
+    document.setdefault("consumer", {})["studio_exports_clips"] = True
     progress(project, "writing", total=len(plan["shots"]))
     revise_shot(plan, index, revision["feedback"], pictures, writer_prompt)
     document["timeline"]["boxes"][index]["prompt"] = plan["shots"][index]["prompt"]

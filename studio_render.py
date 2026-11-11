@@ -82,7 +82,7 @@ class RenderClient:
         return self.request(PREFIX + "/projects/" + quote(project_id, safe=""))
 
     def update_project(self, project_id, document, revision):
-        fields = {key: document[key] for key in ("name", "settings", "timeline", "assets")}
+        fields = {key: document[key] for key in ("name", "settings", "timeline", "assets", "consumer") if key in document}
         return self.request(PREFIX + "/projects/" + quote(project_id, safe=""),
                             "PUT", dict(fields, expected_revision=revision))
 
