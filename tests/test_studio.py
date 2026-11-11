@@ -35,6 +35,23 @@ def shot_plan(count=5):
 
 
 class WriterTests(unittest.TestCase):
+    def test_writer_restores_references_omitted_from_individual_shots(self):
+        for pictures, expected in (
+            ([("image17", None)], ("@image17", "@image17")),
+            ([("image17", None), ("image18", None)], ("@image17", "@image18")),
+        ):
+            with self.subTest(pictures=pictures):
+                plan = shot_plan(2)
+                if len(pictures) > 1:
+                    plan["shots"][0]["reference_slots"] = ["image17"]
+                    plan["shots"][1]["reference_slots"] = ["image18"]
+                with patch.object(writer, "ask_qwen", side_effect=[
+                    plan, {"prompts": ["@image17 enters.", "The subject turns."]},
+                ]):
+                    result = writer.plan_and_write("Twee shots", pictures)
+                for shot, reference in zip(result["shots"], expected):
+                    self.assertIn(reference, shot["prompt"])
+
     def test_qwen_retries_truncated_output_without_thinking(self):
         def response(finish_reason, content):
             return BytesIO(json.dumps({"choices": [{

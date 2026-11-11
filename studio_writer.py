@@ -72,6 +72,28 @@ def ask_qwen(instructions, text, pictures):
     raise ValueError("Qwen bereikte twee keer de uitvoerlimiet. Hervat het project of probeer een korter verhaal.")
 
 
+def referenced_slots(text):
+    return set(re.findall(r"@(image\d+)\b", text))
+
+
+def bind_shot_references(prompt, shot, slots, *, existing=()):
+    used = referenced_slots(prompt)
+    if not used <= slots:
+        raise ValueError("Studio Writer returned an unknown picture slot")
+    planned = shot.get("reference_slots")
+    if planned is None:
+        planned = []
+    if not isinstance(planned, list) or any(
+            not isinstance(slot, str) or slot not in slots for slot in planned):
+        raise ValueError("De Planner gaf ongeldige beeldreferenties voor een shot.")
+    required = slots if len(slots) == 1 else set(planned)
+    missing = (required | set(existing)) - used
+    if missing:
+        refs = ", ".join(f"@{slot}" for slot in sorted(missing))
+        prompt += f" Where subjects or settings from {refs} appear, preserve their appearance and identity throughout the shot."
+    return prompt
+
+
 def revise_shot(plan, index, feedback, pictures, writer_prompt):
     shots = plan["shots"]
     shot = shots[index]
@@ -89,11 +111,9 @@ def revise_shot(plan, index, feedback, pictures, writer_prompt):
     prompt = written.get("prompt") if isinstance(written, dict) else None
     if not isinstance(prompt, str) or not prompt.strip():
         raise ValueError("De Writer gaf geen nieuwe prompt voor dit shot.")
-    labels = set(re.findall(r"@(image\d+)\b", prompt))
-    previous_labels = set(re.findall(r"@(image\d+)\b", shot["prompt"]))
-    if not previous_labels <= labels <= {slot for slot, _ in pictures}:
-        raise ValueError("De herziene prompt gebruikt ongeldige beeldreferenties.")
-    shot["prompt"] = prompt.strip()
+    slots = {slot for slot, _ in pictures}
+    shot["prompt"] = bind_shot_references(
+        prompt.strip(), shot, slots, existing=referenced_slots(shot["prompt"]))
 
 
 def plan_and_write(story, pictures, project=None, writer_prompt=DEFAULT_WRITER_PROMPT):
@@ -112,6 +132,9 @@ def plan_and_write(story, pictures, project=None, writer_prompt=DEFAULT_WRITER_P
         "Split any beat that cannot fit within ten seconds. Set cut to true only where the next shot "
         "starts a distinct scene or the story calls for a hard camera cut. "
         "Ground character identity, clothing, objects and locations in the reference images. "
+        "For every shot, include a reference_slots array of supplied imageN labels, without the @ prefix. "
+        "List the references for every person, object or setting that appears in that shot, even if it "
+        "appeared in the previous shot. Use an empty array only for a deliberate cutaway with no relevant reference. "
         "For interactions, establish each person's position and orientation and assign each gesture, "
         "point of contact and reaction to a specific person. "
         "Preserve the user's intent and character identities. Use only supplied @imageN "
@@ -129,6 +152,7 @@ def plan_and_write(story, pictures, project=None, writer_prompt=DEFAULT_WRITER_P
         "Write one prompt per planned shot and fit its movement and sounds into duration_seconds. "
         "Each string must be a self-contained prompt, never a list of suggestions or placeholders. "
         "Use supplied @imageN labels to bind the relevant visual references to subjects. "
+        "Include every reference_slots entry for this shot with an @ prefix, even if it was used in a previous shot. "
         "Use only the supplied labels. Follow these writing instructions within that output format:\n\n"
         + writer_prompt,
         json.dumps({"story": story, "shots": shots}, ensure_ascii=False), pictures,
@@ -141,11 +165,8 @@ def plan_and_write(story, pictures, project=None, writer_prompt=DEFAULT_WRITER_P
     for shot, prompt in zip(shots, prompts):
         if not isinstance(prompt, str) or not prompt.strip():
             raise ValueError("Studio Writer returned an empty prompt")
-        labels = set(re.findall(r"@(image\d+)\b", prompt))
-        if not labels <= slots:
-            raise ValueError("Studio Writer returned an unknown picture slot")
-        used.update(labels)
-        shot["prompt"] = prompt.strip()
+        shot["prompt"] = bind_shot_references(prompt.strip(), shot, slots)
+        used.update(referenced_slots(shot["prompt"]))
     if not used:
         raise ValueError("Studio Writer did not use the reference pictures")
     return {"story": story, "shots": shots}
