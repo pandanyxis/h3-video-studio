@@ -79,7 +79,13 @@ def review_transition(outgoing, incoming, directory, planned_before, planned_aft
         frames.extend((timestamp, path, label) for timestamp, path in evidence)
     result = ask_qwen(
         "Review whether the visual transition feels natural using the labeled frames on both sides. "
-        "Track each visible person separately. For continuous action, check whether posture, limb positions, "
+        "Prioritize spatial continuity. Match each visible person across the boundary and compare where "
+        "they end and begin relative to fixed landmarks and other people. Flag unexplained relocations, "
+        "people swapping places, or sudden changes in distance during continuous action. A new camera "
+        "angle can change screen position without moving the person in the scene. If the view lacks "
+        "shared landmarks or reliable spatial cues, state the uncertainty. For a position mismatch, "
+        "identify the person, the visible anchor, and where the incoming shot should begin. "
+        "For continuous action, also check whether posture, limb positions, "
         "direction and pace carry through plausibly. Look for sudden resets, jumps, or limbs merging between "
         "people. Compare visible garments, layers and accessories for each person. Flag clothing that suddenly "
         "appears, disappears or changes during continuous action, allowing for framing and occlusion. "
