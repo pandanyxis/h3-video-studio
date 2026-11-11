@@ -172,8 +172,13 @@ def plan_and_write(story, pictures, project=None, writer_prompt=DEFAULT_WRITER_P
         "Use one or two concise sentences per field. "
         f"Set a numeric duration_seconds from 1 to {MAX_SHOT_SECONDS} for each shot, based on the action's "
         "pacing. Use shorter clips for quick actions and longer clips for actions that need time. "
-        "Split any beat that cannot fit within ten seconds. Set cut to true only where the next shot "
-        "starts a distinct scene or the story calls for a hard camera cut. "
+        "Plan the story as a chain of beats. Establish the opening situation, carry each action or "
+        "reaction forward from what just happened, and reach the ending implied or requested by the user. "
+        "Keep the user's sequence, causal links and payoff. When a beat needs more than ten seconds, "
+        "split it at a clear point in the action. Continue that action from the split without replaying "
+        "its setup, reintroducing the characters, or jumping ahead to an unrelated event. "
+        "The cut flag describes how THIS shot starts. Set cut to false for continuous action. "
+        "Set it to true for a distinct scene or a hard camera cut called for by the story. "
         "Ground character identity, clothing, objects and locations in the reference images. "
         + REFERENCE_ROLE_INSTRUCTIONS +
         "For every shot, include a reference_slots array of supplied imageN labels, without the @ prefix. "
@@ -183,7 +188,9 @@ def plan_and_write(story, pictures, project=None, writer_prompt=DEFAULT_WRITER_P
         "point of contact and reaction to a specific person. "
         "Preserve the user's intent and character identities. Use only supplied @imageN "
         "labels for visual references. Connect each shot's opening state to the previous "
-        "closing state when the action is continuous. Keep actions feasible in a short clip.",
+        "closing state when the action is continuous. Make each start and end describe visible "
+        "positions relative to fixed landmarks, body pose, movement in progress, and relevant objects. "
+        "Keep actions feasible in a short clip.",
         story, pictures, reference_notes=notes,
     )
     shots = validate_plan(plan, require_duration=not resumed)
@@ -191,17 +198,30 @@ def plan_and_write(story, pictures, project=None, writer_prompt=DEFAULT_WRITER_P
         atomic_json(saved, plan)
         check_cancelled(project)
         progress(project, "writing", total=len(shots))
+    writer_shots = []
+    for index, shot in enumerate(shots):
+        context = {}
+        if index and not shot.get("cut", False):
+            context["previous_closing_state"] = shots[index - 1]["end"]
+        if index + 1 < len(shots) and not shots[index + 1].get("cut", False):
+            context["next_opening_state"] = shots[index + 1]["start"]
+        writer_shots.append({**shot, **context})
     written = ask_qwen(
         "Convert the supplied shot plan into complete English video prompts in the same order. "
         f"Return only a JSON object with a prompts array of exactly {len(shots)} nonempty strings. "
         "Write one prompt per planned shot and fit its movement and sounds into duration_seconds. "
         "Each string must be a self-contained prompt, never a list of suggestions or placeholders. "
+        "Write the prompts as consecutive parts of the same story. If previous_closing_state is present, "
+        "begin at that visible state and continue the movement or reaction already underway. Preserve "
+        "who stands where, what they hold, and what has already happened. If next_opening_state is present, "
+        "end this clip in a state that leads into it. Use adjacent states only to anchor the boundary. "
+        "Keep the actual action within this shot's planned beat and avoid replaying prior beats. "
         "Use supplied @imageN labels to bind the relevant visual references to subjects. "
         + REFERENCE_ROLE_INSTRUCTIONS +
         "Include every reference_slots entry for this shot with an @ prefix, even if it was used in a previous shot. "
         "Use only the supplied labels. Follow these writing instructions within that output format:\n\n"
         + writer_prompt,
-        json.dumps({"story": story, "shots": shots}, ensure_ascii=False), pictures, reference_notes=notes,
+        json.dumps({"story": story, "shots": writer_shots}, ensure_ascii=False), pictures, reference_notes=notes,
     )
     prompts = written.get("prompts") if isinstance(written, dict) else None
     if not isinstance(prompts, list) or len(prompts) != len(shots):

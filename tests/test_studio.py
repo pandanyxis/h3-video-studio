@@ -122,6 +122,20 @@ class WriterTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "duration from 1 to 10"):
                 writer.plan_and_write("A boat", [("image17", None)])
 
+    def test_writer_receives_visible_handoffs_at_continuous_boundaries(self):
+        plan = shot_plan(3)
+        plan["shots"][0]["end"] = "Eva stands next to the open door."
+        plan["shots"][1]["start"] = "Eva starts stepping through the open door."
+        plan["shots"][2]["cut"] = True
+        prompts = {"prompts": ["@image17 Eva"] * 3}
+        with patch.object(writer, "ask_qwen", side_effect=[plan, prompts]) as call:
+            writer.plan_and_write("Eva opens the door and walks through it.", [("image17", None)])
+        first, second, third = json.loads(call.call_args.args[1])["shots"]
+        self.assertEqual(first["next_opening_state"], second["start"])
+        self.assertEqual(second["previous_closing_state"], first["end"])
+        self.assertNotIn("next_opening_state", second)
+        self.assertNotIn("previous_closing_state", third)
+
     def test_writer_failure_reuses_saved_plan_and_rejects_unknown_references(self):
         with tempfile.TemporaryDirectory() as folder:
             project = Path(folder)
