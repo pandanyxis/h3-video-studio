@@ -35,6 +35,23 @@ def shot_plan(count=5):
 
 
 class WriterTests(unittest.TestCase):
+    def test_qwen_retries_truncated_output_without_thinking(self):
+        def response(finish_reason, content):
+            return BytesIO(json.dumps({"choices": [{
+                "finish_reason": finish_reason, "message": {"content": content},
+            }]}).encode())
+
+        with (
+            patch.dict(writer.os.environ, {"LLAMA_API_KEY": "test"}),
+            patch.object(writer, "urlopen", side_effect=[
+                response("length", '{"shots":['), response("stop", '{"shots":[]}'),
+            ]) as calls,
+        ):
+            self.assertEqual(writer.ask_qwen("system", "user", []), {"shots": []})
+        payloads = [json.loads(call.args[0].data) for call in calls.call_args_list]
+        self.assertEqual([body["max_tokens"] for body in payloads], [8192, 16384])
+        self.assertTrue(all(body["chat_template_kwargs"] == {"enable_thinking": False} for body in payloads))
+
     def test_custom_instructions_replace_the_default_only_for_the_writer(self):
         instructions = "Describe when the boat slows and when it stops."
         with patch.object(writer, "ask_qwen", side_effect=[shot_plan(1), {"prompts": ["@image17 boat"]}]) as call:

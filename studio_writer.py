@@ -47,19 +47,29 @@ def ask_qwen(instructions, text, pictures):
     payload = {
         "model": "qwen-hauhau",
         "response_format": {"type": "json_object"},
-        "max_tokens": 8192,
+        "chat_template_kwargs": {"enable_thinking": False},
+        "temperature": 0.7,
+        "top_p": 0.8,
         "messages": [
             {"role": "system", "content": instructions},
             {"role": "user", "content": content},
         ],
     }
-    request = Request(
-        QWEN_URL + "/v1/chat/completions",
-        data=json.dumps(payload).encode(),
-        headers={"Content-Type": "application/json", "Authorization": "Bearer " + key},
-    )
-    with urlopen(request, timeout=900) as response:
-        return json.loads(json.load(response)["choices"][0]["message"]["content"])
+    for max_tokens in (8192, 16384):
+        request = Request(
+            QWEN_URL + "/v1/chat/completions",
+            data=json.dumps(dict(payload, max_tokens=max_tokens)).encode(),
+            headers={"Content-Type": "application/json", "Authorization": "Bearer " + key},
+        )
+        with urlopen(request, timeout=900) as response:
+            choice = json.load(response)["choices"][0]
+        if choice.get("finish_reason") == "length":
+            continue
+        try:
+            return json.loads(choice["message"]["content"])
+        except (TypeError, ValueError):
+            raise ValueError("Qwen gaf geen geldig shotplan of geldige prompts terug. Hervat het project om het opnieuw te proberen.") from None
+    raise ValueError("Qwen bereikte twee keer de uitvoerlimiet. Hervat het project of probeer een korter verhaal.")
 
 
 def revise_shot(plan, index, feedback, pictures, writer_prompt):
@@ -96,6 +106,7 @@ def plan_and_write(story, pictures, project=None, writer_prompt=DEFAULT_WRITER_P
         "or a story, not technical video prompts. " + shot_count_instruction() +
         "Return only a JSON object with a shots array in story order. "
         "Each shot needs nonempty action, camera, sound, start and end strings. "
+        "Use one or two concise sentences per field. "
         f"Set a numeric duration_seconds from 1 to {MAX_SHOT_SECONDS} for each shot, based on the action's "
         "pacing. Use shorter clips for quick actions and longer clips for actions that need time. "
         "Split any beat that cannot fit within ten seconds. Set cut to true only where the next shot "

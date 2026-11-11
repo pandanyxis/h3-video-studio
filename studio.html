@@ -41,6 +41,9 @@ p { margin:0 0 18px; }
 .intro { color:var(--muted); max-width:630px; margin-bottom:30px; }
 .layout { display:grid; grid-template-columns:minmax(0,1fr) 260px; gap:24px; align-items:start; }
 .panel { background:#131c28; border:1px solid var(--line); border-radius:14px; padding:25px; }
+.project-progress { display:grid; gap:4px; margin-bottom:20px; padding:12px 14px; border:1px solid #446052; border-radius:8px; background:#172a25; }
+.project-progress strong { color:var(--accent); }
+.project-progress p { margin:0; }
 form { display:grid; gap:14px; }
 label { font-weight:600; }
 .hint { color:var(--muted); font-size:12px; }
@@ -156,7 +159,10 @@ summary { cursor:pointer; font-size:13px; font-weight:550; }
         </form>
       </section>
       <section class="panel" id="project-panel" hidden aria-label="Videoproject">
-        <p id="project-status" role="status" aria-live="polite"></p>
+        <div class="project-progress" role="status" aria-live="polite">
+          <strong id="project-step"></strong>
+          <p id="project-status"></p>
+        </div>
         <h2>Jouw verhaal</h2>
         <p class="project-story" id="saved-story"></p>
         <div class="thumbnails" id="saved-images"></div>
@@ -197,16 +203,17 @@ summary { cursor:pointer; font-size:13px; font-weight:550; }
 const $ = selector => document.querySelector(selector);
 const state = { id:null, generation:0, timer:null, previewUrls:[], shotSignature:null, referenceId:null };
 const stages = ['input','planning','writing','rendering','exporting'];
+const stepNames = ['Jouw idee & beelden','Story & Shot Planner','Studio Writer','Video genereren','Complete MP4'];
 const labels = {
   queued:'Je project staat in de wachtrij.', preparing:'Studio wacht op de GPU en de modellen. Bij de eerste start kan dit even duren.',
-  planning:'Studio kiest het aantal en de lengte van de shots die je verhaal nodig heeft.', writing:'Studio Writer schrijft de volledige H3-prompt voor elk shot.',
+  planning:'Qwen analyseert je idee en referentiebeelden en bepaalt het aantal shots en hun lengte.', writing:'Studio Writer schrijft de volledige H3-prompt voor elk shot.',
   references:'Studio koppelt je referentiebeelden aan de shots.', rendering:'Studio genereert je videoclips.',
   exporting:'Studio haalt de clips op en voegt ze samen.', done:'Je film is klaar.', failed:'De productie is onderbroken.'
 };
 const statusLabels = {queued:'In de wachtrij',running:'In productie',done:'Voltooid',failed:'Onderbroken'};
 
 async function api(path, options) {
-  const response = await fetch(path, options);
+  const response = await fetch(path, {cache:'no-store', ...options});
   const result = await response.json();
   if (!response.ok) throw new Error(result.error || 'Studio kon de aanvraag niet verwerken.');
   return result;
@@ -224,14 +231,15 @@ function thumbnail(source, caption) {
   figure.append(image,label);
   return figure;
 }
+function stepIndex(stage) {
+  return stages.indexOf(stage === 'references' ? 'rendering' : stage);
+}
 function pipeline(stage) {
-  let index = stages.indexOf(stage);
-  if (stage === 'references') index = 2;
-  if (stage === 'done') index = 5;
-  if (['queued','preparing'].includes(stage)) index = 0;
+  const index = stepIndex(stage);
+  const completed = stage === 'done' ? stages.length : ['queued','preparing'].includes(stage) ? 1 : index;
   document.querySelectorAll('.steps li').forEach((step,i) => {
     step.classList.toggle('active', i === index);
-    step.classList.toggle('complete', i < index);
+    step.classList.toggle('complete', i < completed);
     if (i === index) step.setAttribute('aria-current','step');
     else step.removeAttribute('aria-current');
   });
@@ -268,12 +276,17 @@ function showProject(project) {
   const stage = project.status === 'done' ? 'done' : project.progress.stage;
   const count = project.progress.completed || 0;
   const total = project.progress.total || project.shots.length;
-  $('#project-status').textContent = labels[stage] || statusLabels[project.status];
-  if (stage === 'rendering' && total) $('#project-status').textContent += ' ' + count + ' van ' + total + ' clips beschikbaar.';
+  const index = stepIndex(stage);
+  const step = index >= 0 ? 'Stap ' + (index+1) + ' van ' + stages.length + ' · ' + stepNames[index]
+    : stage === 'preparing' ? 'GPU en modellen controleren' : statusLabels[project.status];
+  if ($('#project-step').textContent !== step) $('#project-step').textContent = step;
+  let description = labels[stage] || statusLabels[project.status];
+  if (stage === 'rendering' && total) description += ' ' + count + ' van ' + total + ' clips beschikbaar.';
   if (stage === 'rendering' && project.progress.current_shot) {
-    $('#project-status').textContent += ' Bezig met shot ' + project.progress.current_shot + '.';
+    description += ' Bezig met shot ' + project.progress.current_shot + '.';
   }
-  if (stage === 'writing' && total) $('#project-status').textContent += ' ' + total + (total === 1 ? ' shot gepland.' : ' shots gepland.');
+  if (stage === 'writing' && total) description += ' ' + total + (total === 1 ? ' shot gepland.' : ' shots gepland.');
+  if ($('#project-status').textContent !== description) $('#project-status').textContent = description;
   $('#notice').textContent = project.status === 'failed' ? (project.progress.error || labels.failed) : '';
   $('#resume').hidden = project.status !== 'failed';
   $('#log').hidden = project.status !== 'failed';
@@ -387,6 +400,8 @@ function navigate() {
   $('#film').load();
   $('#input-panel').hidden = Boolean(state.id);
   $('#project-panel').hidden = !state.id;
+  $('#project-step').textContent = 'Projectstatus ophalen…';
+  $('#project-status').textContent = '';
   $('#intro').hidden = Boolean(state.id);
   $('#shots-section').hidden = true;
   $('#project-output').hidden = true;
