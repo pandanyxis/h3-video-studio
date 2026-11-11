@@ -53,6 +53,10 @@ select,input[type=number] { width:100%; border:1px solid #3a485c; border-radius:
 .render-settings button { justify-self:start; }
 .sampling { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; }
 .sampling label { display:grid; gap:6px; }
+.lora-stack { display:grid; gap:8px; }
+.lora-row { display:grid; grid-template-columns:minmax(0,1fr) 100px auto; gap:8px; align-items:end; }
+.lora-row label { display:grid; gap:4px; min-width:0; }
+@media(max-width:550px) { .lora-row { grid-template-columns:minmax(0,1fr) 90px; } }
 .writer-settings { padding:12px 14px; border:1px solid var(--line); border-radius:8px; }
 .writer-settings summary { cursor:pointer; font-weight:600; }
 .writer-settings label,.writer-settings textarea { display:block; margin-top:10px; }
@@ -141,11 +145,18 @@ summary { cursor:pointer; font-size:13px; font-weight:550; }
             <legend>Custom render settings</legend>
             <label for="render-model">MiniMax H3 model</label>
             <select id="render-model" required></select>
-            <label for="render-lora">LoRA</label>
-            <select id="render-lora" required></select>
+            <div class="lora-stack" id="render-loras" aria-label="LoRA stack"></div>
+            <template id="lora-row-template">
+              <div class="lora-row">
+                <label>LoRA <select class="lora-name" required></select></label>
+                <label>Strength <input class="lora-strength" type="number" min="0" max="2" step="any" required></label>
+                <button type="button" class="secondary remove-lora">Remove</button>
+              </div>
+            </template>
+            <button id="add-lora" type="button" class="secondary">Add LoRA</button>
+            <span class="hint">LoRAs are optional and applied in the order shown.</span>
             <div class="sampling">
               <label>Sampling steps <input id="render-steps" type="number" min="1" max="100" step="1" value="8" required></label>
-              <label>LoRA strength <input id="render-strength" type="number" min="0" max="2" step="any" value="0.8" required></label>
             </div>
           </fieldset>
           <div id="render-feedback" hidden>
@@ -447,6 +458,35 @@ $('#images').addEventListener('change', () => {
   state.previewUrls = [...$('#images').files].map(file => URL.createObjectURL(file));
   $('#previews').replaceChildren(...state.previewUrls.map((url,i) => thumbnail(url,'Reference ' + (i+1))));
 });
+let loraOptions;
+let maxLoras;
+function readLoraRows() {
+  return [...$('#render-loras').children].map(row => ({
+    name:row.querySelector('.lora-name').value,
+    strength:row.querySelector('.lora-strength').valueAsNumber
+  }));
+}
+function addLoraRow({name = '', strength = 0.8} = {}) {
+  const stack = $('#render-loras');
+  const add = $('#add-lora');
+  if (!loraOptions?.length || stack.children.length >= maxLoras) return;
+  const row = $('#lora-row-template').content.firstElementChild.cloneNode(true);
+  const select = row.querySelector('.lora-name');
+  select.replaceChildren(new Option('Select a LoRA', ''), ...loraOptions.map(file => new Option(file, file)));
+  select.value = loraOptions.includes(name) ? name : '';
+  row.querySelector('.lora-strength').value = Number.isFinite(strength) ? strength : '';
+  row.querySelector('.remove-lora').addEventListener('click', () => {
+    row.remove();
+    add.disabled = false;
+    add.focus();
+  });
+  stack.append(row);
+  add.disabled = stack.children.length >= maxLoras;
+}
+$('#add-lora').addEventListener('click', () => {
+  addLoraRow();
+  $('#render-loras').lastElementChild?.querySelector('select').focus();
+});
 async function loadRenderOptions() {
   const fieldset = $('#render-settings');
   const status = $('#render-options-status');
@@ -455,22 +495,24 @@ async function loadRenderOptions() {
   fieldset.disabled = true;
   status.textContent = 'Loading installed models and LoRAs…';
   try {
-    const {models, loras, defaults} = await api('/render-options');
-    for (const [selector, values, fallback, label] of [
-      ['#render-model', models, defaults.model, 'Select a model'],
-      ['#render-lora', loras, defaults.lora, 'Select a LoRA']
-    ]) {
-      const select = $(selector);
-      const current = select.value;
-      select.replaceChildren(new Option(label, ''), ...values.map(name => new Option(name, name)));
-      select.value = values.includes(current) ? current : values.includes(fallback) ? fallback : '';
-    }
-    if (!models.length || !loras.length) {
-      status.textContent = 'A model and LoRA are not available yet.';
+    const {models, loras, defaults, max_loras} = await api('/render-options');
+    const model = $('#render-model');
+    const current = model.value;
+    model.replaceChildren(new Option('Select a model', ''), ...models.map(name => new Option(name, name)));
+    model.value = models.includes(current) ? current : models.includes(defaults.model) ? defaults.model : '';
+    if (!models.length) {
+      status.textContent = 'No model is available yet.';
       return;
     }
+    const selected = loraOptions ? readLoraRows() : loras.includes(defaults.lora)
+      ? [{name:defaults.lora, strength:defaults.lora_strength}] : [];
+    loraOptions = loras;
+    maxLoras = max_loras;
+    $('#render-loras').replaceChildren();
+    $('#add-lora').disabled = !loras.length;
+    selected.forEach(addLoraRow);
     fieldset.disabled = $('#profile').value !== 'own-settings';
-    status.textContent = 'Select a LoRA compatible with the chosen MiniMax H3 model.';
+    status.textContent = loras.length ? 'Choose LoRAs compatible with the selected model.' : 'No LoRAs are installed.';
   } catch (error) { status.textContent = error.message; }
   finally { reload.disabled = false; }
 }
@@ -515,8 +557,8 @@ $('#create-form').addEventListener('submit',async event => {
   $('#notice').textContent = 'Uploading your story and reference images…';
   try {
     const renderSettings = custom ? {
-      model:$('#render-model').value, lora:$('#render-lora').value,
-      steps:$('#render-steps').valueAsNumber, lora_strength:$('#render-strength').valueAsNumber
+      model:$('#render-model').value, loras:readLoraRows(),
+      steps:$('#render-steps').valueAsNumber
     } : null;
     const result = await post('/projects',{
       story:$('#story').value, profile:$('#profile').value, aspect:$('#aspect').value,
@@ -530,6 +572,8 @@ $('#create-form').addEventListener('submit',async event => {
 });
 $('#new-project').addEventListener('click',() => {
   $('#create-form').reset();
+  loraOptions = undefined;
+  $('#render-loras').replaceChildren();
   if ($('#writer-settings').open && writerDefaults) $('#writer-prompt').value = writerDefaults.prompt;
   showRenderSettings();
   state.previewUrls.forEach(url => URL.revokeObjectURL(url));

@@ -6,6 +6,8 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
+from studio_profiles import parse_loras, set_lora_stack
+
 ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -17,6 +19,47 @@ def load(name):
 
 
 class ModelProfileTests(unittest.TestCase):
+    def test_lora_stack_links_ui_and_api_in_order(self):
+        for loras in ([], [('turbo', 0.8)], [('turbo', 0.8), ('style', 0.5), ('motion', 0.3)]):
+            with self.subTest(loras=loras):
+                workflow = {
+                    'api': {
+                        '104': {'inputs': {}},
+                        '106': {'class_type': 'LoraLoaderModelOnly', 'inputs': {'model': ['104', 0]}},
+                        '107': {'inputs': {'model': ['106', 0]}},
+                    },
+                    'ui': {
+                        'nodes': [
+                            {'id': 104, 'order': 0, 'outputs': [{'links': [15]}]},
+                            {'id': 106, 'order': 1, 'pos': [0, 0], 'inputs': [{'link': 15}],
+                             'outputs': [{'links': [1]}], 'widgets_values': ['default', 1.0]},
+                            {'id': 107, 'order': 2, 'inputs': [{'link': 1}]},
+                        ],
+                        'links': [[15, 104, 0, 106, 0, 'MODEL'], [1, 106, 0, 107, 0, 'MODEL']],
+                    },
+                }
+                set_lora_stack(workflow, loras)
+                api, ui = workflow['api'], workflow['ui']
+                nodes = {node['id']: node for node in ui['nodes']}
+                self.assertEqual(set(api), {str(node) for node in nodes})
+                for link, source, _, target, _, _ in ui['links']:
+                    self.assertIn(link, nodes[source]['outputs'][0]['links'])
+                    self.assertEqual(nodes[target]['inputs'][0]['link'], link)
+                    self.assertEqual(api[str(target)]['inputs']['model'], [str(source), 0])
+                current = api['107']['inputs']['model'][0]
+                for name, strength in reversed(loras):
+                    entry = api[current]['inputs']
+                    self.assertEqual((entry['lora_name'], entry['strength_model']), (name, strength))
+                    current = entry['model'][0]
+                self.assertEqual(current, '104')
+
+    def test_lora_selection_rejects_duplicates_and_missing_files(self):
+        chosen = {'name': 'turbo', 'strength': 0.8}
+        with self.assertRaisesRegex(ValueError, 'only once'):
+            parse_loras([chosen, chosen], ['turbo'])
+        with self.assertRaisesRegex(ValueError, 'installed'):
+            parse_loras([chosen], ['style'])
+
     def test_loaders_match_exact_pinned_files(self):
         models = json.loads((ROOT / 'civitai-models.json').read_text())
         diffusion = {m['name'] for m in models if m['subdir'] == 'diffusion_models'}

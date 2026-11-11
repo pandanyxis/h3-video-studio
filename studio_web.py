@@ -20,7 +20,7 @@ import warnings
 from PIL import Image, UnidentifiedImageError
 
 from prepare_timeline import ASPECT_SIZES, FPS
-from studio_profiles import SELECTION_PREFIX, default_settings, selection_profile
+from studio_profiles import MAX_LORAS, SELECTION_PREFIX, default_settings, selection_profile
 from studio_render import RenderClient, RenderError
 from studio_storage import atomic_json, progress, read_json
 from studio_writer import DEFAULT_WRITER_PROMPT, MAX_WRITER_PROMPT
@@ -334,7 +334,7 @@ class StudioHandler(BaseHTTPRequestHandler):
                 defaults = default_settings()
             except (OSError, ValueError, RenderError):
                 return self.json(503, error="ComfyUI is not ready yet. Try reloading the models.")
-            return self.json(200, **options, defaults=defaults)
+            return self.json(200, **options, defaults=defaults, max_loras=MAX_LORAS)
         if self.path == "/":
             return self.reply(200, "text/html; charset=utf-8", (HERE / "studio.html").read_bytes())
         if self.path == "/projects":
