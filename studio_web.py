@@ -21,7 +21,7 @@ from PIL import Image, UnidentifiedImageError
 
 from prepare_timeline import ASPECT_SIZES, FPS
 from studio_profiles import MAX_LORAS, SELECTION_PREFIX, default_settings, selection_profile
-from studio_refine import MAX_REVISED_PROMPT, refine_clip, revision_inputs
+from studio_refine import MAX_FEEDBACK, MAX_REVISED_PROMPT, refine_clip, review_film, revision_inputs
 from studio_render import RenderClient, RenderError
 from studio_storage import atomic_json, gpu_lock, progress, read_json
 from studio_writer import (DEFAULT_WRITER_PROMPT, MAX_REFERENCE_NOTE, MAX_WRITER_PROMPT,
@@ -184,11 +184,15 @@ def run_refinement(project, directory):
         review = read_json(file)
         atomic_json(file, {**review, "status": "reviewing"})
         with gpu_lock():
-            result = refine_clip(project, directory, review)
-        atomic_json(file, {**review, **result, "status": "ready", "max_prompt_length": MAX_REVISED_PROMPT})
+            if directory.name == "film-review":
+                result = review_film(project, review["feedback"])
+            else:
+                result = refine_clip(project, directory, review)
+                result["max_prompt_length"] = MAX_REVISED_PROMPT
+        atomic_json(file, {**review, **result, "status": "ready"})
     except Exception as error:
         print(f"Studio refinement {directory.name}: {error}", file=sys.stderr, flush=True)
-        message = str(error) if isinstance(error, ValueError) else "Studio could not review the clip. Try again."
+        message = str(error) if isinstance(error, ValueError) else "Studio could not complete the review. Try again."
         atomic_json(file, {**review, "status": "failed", "error": message})
     finally:
         with QUEUE_LOCK:
@@ -200,6 +204,23 @@ def stage_refinement(project, payload):
         _, index, feedback = revision_inputs(project, payload)
         directory = project / "refinements" / uuid.uuid4().hex
         review = {"id": directory.name, "shot": index, "feedback": feedback, "status": "queued"}
+        atomic_json(directory / "review.json", review)
+        ACTIVE_REFINEMENTS.add(directory)
+        QUEUE.submit(run_refinement, project, directory)
+    return review
+
+
+def stage_film_review(project, payload):
+    directory = project / "film-review"
+    feedback = payload.get("feedback", "")
+    if not isinstance(feedback, str) or len(feedback) > MAX_FEEDBACK:
+        raise ValueError(f"Describe what to review in up to {MAX_FEEDBACK:,} characters.")
+    with QUEUE_LOCK:
+        if not (project / "film.mp4").is_file() or not (project / "production.json").is_file():
+            raise ValueError("Wait for the film to finish before reviewing all clips.")
+        if directory in ACTIVE_REFINEMENTS:
+            raise ValueError("A film review is already running.")
+        review = {"feedback": feedback.strip(), "status": "queued"}
         atomic_json(directory / "review.json", review)
         ACTIVE_REFINEMENTS.add(directory)
         QUEUE.submit(run_refinement, project, directory)
@@ -220,6 +241,8 @@ def project_data(project, details=False):
             review = read_json(path)
             latest_reviews[review["shot"]] = review
         result["refinements"] = latest_reviews
+        film_review = project / "film-review" / "review.json"
+        result["film_review"] = read_json(film_review) if film_review.is_file() else None
         transitions = project / "transitions.json"
         result["transitions"] = read_json(transitions) if transitions.is_file() else {}
         result["story"] = (project / "story.txt").read_text(encoding="utf-8")
@@ -467,7 +490,7 @@ class StudioHandler(BaseHTTPRequestHandler):
             if not schedule(project, resume=True):
                 return self.json(409, error="This project cannot be resumed.")
             return self.json(202, id=project.name)
-        revision = re.fullmatch(r"/projects/([a-f0-9]{32})/(revisions|refinements)", self.path)
+        revision = re.fullmatch(r"/projects/([a-f0-9]{32})/(revisions|refinements|film-review)", self.path)
         if self.path != "/projects" and not revision:
             return self.json(404, error="Unknown address.")
         if revision and not (ROOT / revision[1] / "status").is_file():
@@ -482,6 +505,8 @@ class StudioHandler(BaseHTTPRequestHandler):
             if revision and revision[2] == "refinements":
                 review = stage_refinement(ROOT / revision[1], payload)
                 return self.json(202, **review)
+            if revision and revision[2] == "film-review":
+                return self.json(202, **stage_film_review(ROOT / revision[1], payload))
             project = stage_revision(ROOT / revision[1], payload) if revision else stage(payload)
         except (ValueError, TypeError, OSError, UnidentifiedImageError, Image.DecompressionBombError, Image.DecompressionBombWarning) as error:
             return self.json(400, error=str(error) if isinstance(error, ValueError) else "The reference image could not be read. Use JPEG, PNG, or WebP.")
@@ -510,7 +535,11 @@ def main():
         if status_file.read_text(encoding="utf-8") in ("queued", "running"):
             schedule(status_file.parent)
     for project in managed_projects():
-        for review_file in project.glob("refinements/*/review.json"):
+        review_files = list(project.glob("refinements/*/review.json"))
+        film_review = project / "film-review" / "review.json"
+        if film_review.is_file():
+            review_files.append(film_review)
+        for review_file in review_files:
             review = read_json(review_file)
             if review["status"] in ("queued", "reviewing"):
                 directory = review_file.parent

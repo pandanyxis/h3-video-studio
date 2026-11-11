@@ -303,6 +303,34 @@ class WebTests(unittest.TestCase):
             self.assertEqual(state["document"]["timeline"]["boxes"][0]["prompt"], approved)
             self.assertEqual((parent / "film.mp4").read_bytes(), b"original")
 
+    def test_whole_film_review_passes_ordered_samples_and_saves_findings(self):
+        project = web.stage({"story": "A boat", "images": [image_data()]})
+        (project / "film.mp4").write_bytes(b"original")
+        web.atomic_json(project / "production.json", {"plan": {**shot_plan(2), "story": "A boat"}})
+        with patch.object(web.QUEUE, "submit") as submit:
+            with self.post(f"/projects/{project.name}/film-review", {"feedback": "Check story flow."}) as response:
+                self.assertEqual(response.status, 202)
+            task, root, directory = submit.call_args.args
+        with (
+            patch.object(web, "gpu_lock"),
+            patch.object(studio_refine, "clip_duration", return_value=3),
+            patch.object(studio_refine, "extract_review_frame", return_value=True),
+            patch.object(studio_refine, "ask_qwen", return_value={
+                "summary": "The second shot repeats the opening.",
+                "issues": [{"shot": 2, "feedback": "Continue from the dock."}],
+            }) as review,
+        ):
+            task(root, directory)
+        self.assertEqual(json.loads(review.call_args.args[1])["feedback"], "Check story flow.")
+        self.assertEqual([label for _, _, label in review.call_args.kwargs["clip_frames"]],
+                         [f"Shot {shot}: {sample} video frame" for shot in (1, 2)
+                          for sample in ("first", "middle", "last")])
+        with urlopen(self.url + f"/projects/{project.name}") as response:
+            result = json.load(response)["film_review"]
+        self.assertEqual(result["status"], "ready")
+        self.assertEqual(result["issues"], {"2": "Continue from the dock."})
+        self.assertEqual((project / "film.mp4").read_bytes(), b"original")
+
     def test_runpod_proxy_requires_login_and_its_own_https_origin(self):
         self.server.public_origin = "https://testpod-8190.proxy.runpod.net"
         self.server.studio_auth = b"Basic " + base64.b64encode(b"studio:local-test-password")

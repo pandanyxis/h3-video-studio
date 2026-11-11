@@ -166,3 +166,49 @@ def refine_clip(project, directory, request):
         **proposal,
         "frames": [{"file": frame.name, "seconds": round(timestamp, 2)} for timestamp, frame in frames],
     }
+
+
+def review_film(project, feedback):
+    plan = read_json(project / "production.json")["plan"]
+    report = project / "transitions.json"
+    transitions = read_json(report) if report.is_file() else {}
+    with TemporaryDirectory() as temporary:
+        frames = []
+        for index, _ in enumerate(plan["shots"], 1):
+            clip = project / "clips" / f"shot-{index:02d}.mp4"
+            duration = clip_duration(clip)
+            if not math.isfinite(duration) or duration <= 0:
+                raise ValueError(f"Could not read the duration of shot {index}.")
+            for sample, timestamp, last in (("first", None, False), ("middle", duration / 2, False),
+                                             ("last", None, True)):
+                frame = Path(temporary) / f"shot-{index:02d}-{sample}.jpg"
+                if not extract_review_frame(clip, frame, timestamp=timestamp, last=last):
+                    raise ValueError(f"Could not read the {sample} frame of shot {index}.")
+                frames.append((None, frame, f"Shot {index}: {sample} video frame"))
+        result = ask_qwen(
+            "Review the rendered clips together as one film. Compare the intended story, the ordered shot plan, "
+            "the user feedback and the labeled rendered frames. Check whether actions and reactions build on "
+            "one another, story beats repeat or go missing, and adjacent shots join naturally. Treat earlier "
+            "transition reports as supporting evidence. State uncertainty for motion, sound, or events that "
+            "the sampled frames cannot show. Return JSON with summary (a brief English overview) and issues "
+            "(an array of objects with shot, a one-based shot number to refine, and feedback, a specific "
+            "English edit note). Include only actionable issues worth the user's attention. Give at most one "
+            "combined note per affected shot. Use an empty issues array "
+            "when you find no actionable change.",
+            json.dumps({"story": plan["story"], "shots": plan["shots"], "feedback": feedback,
+                        "transition_reviews": transitions}, ensure_ascii=False),
+            [], clip_frames=frames, timeout=240,
+        )
+    if (not isinstance(result, dict) or not isinstance(result.get("summary"), str)
+            or not result["summary"].strip() or not isinstance(result.get("issues"), list)):
+        raise ValueError("Qwen returned an invalid film review.")
+    issues = {}
+    for issue in result["issues"]:
+        if not isinstance(issue, dict):
+            raise ValueError("Qwen returned an invalid film review note.")
+        shot, note = issue.get("shot"), issue.get("feedback")
+        if (type(shot) is not int or not 1 <= shot <= len(plan["shots"]) or shot in issues
+                or not isinstance(note, str) or not note.strip()):
+            raise ValueError("Qwen returned an invalid film review note.")
+        issues[shot] = note.strip()[:MAX_FEEDBACK]
+    return {"summary": result["summary"].strip()[:MAX_FEEDBACK], "issues": issues}

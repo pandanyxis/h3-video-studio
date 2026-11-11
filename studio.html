@@ -212,6 +212,17 @@ summary { cursor:pointer; font-size:13px; font-weight:550; }
       </section>
       <section id="shots-section" hidden>
         <h2>Review clips</h2>
+        <section id="film-review" class="panel" hidden>
+          <h3>Review all clips</h3>
+          <form id="film-review-form" class="shot-review">
+            <label>What should Qwen look for? (optional)
+              <textarea maxlength="4000" placeholder="For example, check where the story resets or characters change position between shots."></textarea>
+            </label>
+            <button type="submit" class="secondary">Review all clips</button>
+          </form>
+          <p id="film-review-status" role="status"></p>
+          <div id="film-review-findings"></div>
+        </section>
         <div id="shots"></div>
       </section>
     </div>
@@ -292,6 +303,64 @@ function transitionReview(index, review) {
   }
   return panel;
 }
+function showFilmReview(project) {
+  const panel = $('#film-review');
+  panel.hidden = !project.can_revise;
+  if (panel.hidden) return;
+  const form = $('#film-review-form');
+  const review = project.film_review;
+  const signature = JSON.stringify([project.id, review]);
+  if (panel.dataset.signature === signature) return;
+  if (panel.dataset.project !== project.id) {
+    panel.dataset.project = project.id;
+    form.querySelector('textarea').value = review?.feedback || '';
+  }
+  panel.dataset.signature = signature;
+  form.querySelector('button').disabled = ['queued','reviewing'].includes(review?.status);
+  const status = {queued:'Film review queued…',reviewing:'Qwen is reviewing the clips together…',
+    ready:review?.summary,failed:review?.error};
+  $('#film-review-status').textContent = status[review?.status] || '';
+  const findings = $('#film-review-findings');
+  findings.replaceChildren();
+  for (const [shot, note] of Object.entries(review?.issues || {})) {
+    const item = document.createElement('p');
+    item.textContent = 'Shot ' + shot + ' · ' + note + ' ';
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'secondary';
+    button.textContent = 'Add to Refine clip';
+    button.addEventListener('click', () => {
+      const detail = $('#shots').children[Number(shot)-1];
+      const feedback = detail?.querySelector('.refine-panel textarea');
+      if (!feedback) return;
+      detail.open = true;
+      feedback.value = [feedback.value.trim(), note].filter(Boolean).join('\n\n').slice(0, feedback.maxLength);
+      feedback.focus();
+    });
+    item.append(button);
+    findings.append(item);
+  }
+}
+$('#film-review-form').addEventListener('submit', async event => {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const id = state.id;
+  const generation = state.generation;
+  form.querySelector('button').disabled = true;
+  $('#film-review-status').textContent = 'Submitting film review…';
+  try {
+    await post('/projects/' + id + '/film-review', {feedback:form.querySelector('textarea').value});
+    if (generation === state.generation) {
+      delete $('#film-review').dataset.signature;
+      clearTimeout(state.timer);
+      await poll(id,generation);
+    }
+  } catch (error) {
+    if (generation !== state.generation) return;
+    form.querySelector('button').disabled = false;
+    $('#film-review-status').textContent = error.message;
+  }
+});
 function refineForm(base, index, video, savedReview) {
   const generation = state.generation;
   const panel = document.createElement('section');
@@ -486,6 +555,7 @@ function showProject(project) {
   if (signature !== state.shotSignature) list.replaceChildren();
   state.shotSignature = signature;
   $('#shots-section').hidden = !project.shots.length;
+  showFilmReview(project);
   project.shots.forEach((shot,i) => {
     let detail = list.children[i];
     if (!detail) {
@@ -547,7 +617,10 @@ async function poll(id, generation) {
     showProject(project);
     await listProjects();
     if (generation !== state.generation) return;
-    if (!['done','failed','cancelled'].includes(project.status)) state.timer = setTimeout(() => poll(id,generation),3000);
+    if (!['done','failed','cancelled'].includes(project.status) ||
+        ['queued','reviewing'].includes(project.film_review?.status)) {
+      state.timer = setTimeout(() => poll(id,generation),3000);
+    }
   } catch (error) {
     if (generation !== state.generation) return;
     $('#notice').textContent = error.message + ' Studio is trying to reconnect.';
