@@ -56,8 +56,11 @@ def ask_qwen(instructions, text, pictures, *, clip_frames=(), reference_notes=No
         ])
     for timestamp, path, *labels in clip_frames:
         encoded = base64.b64encode(path.read_bytes()).decode("ascii")
+        label = labels[0] if labels else "Rendered clip"
+        if timestamp is not None:
+            label += f" frame at {timestamp:.2f} seconds"
         content.extend([
-            {"type": "text", "text": f"{labels[0] if labels else 'Rendered clip'} frame at {timestamp:.2f} seconds. This is review evidence."},
+            {"type": "text", "text": f"{label}. This is review evidence."},
             {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{encoded}"}},
         ])
     key = os.environ.get("LLAMA_API_KEY")

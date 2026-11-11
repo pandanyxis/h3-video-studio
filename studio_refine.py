@@ -42,20 +42,26 @@ def clip_duration(clip):
     return float(result.stdout.strip())
 
 
+def extract_review_frame(clip, frame, *, timestamp=None, last=False):
+    seek = [] if timestamp is None else ["-ss", f"{timestamp:.6f}"]
+    filters = "scale=512:512:force_original_aspect_ratio=decrease"
+    if last:
+        filters += ",reverse"
+    subprocess.run(
+        ["ffmpeg", "-nostdin", "-y", "-loglevel", "error", *seek, "-i", str(clip),
+         "-map", "0:v:0", "-frames:v", "1", "-vf", filters, "-q:v", "4", str(frame)],
+        check=True, capture_output=True, timeout=20,
+    )
+    return frame.is_file() and frame.stat().st_size > 0
+
+
 def clip_evidence(clip, directory, timestamps=None):
     if timestamps is None:
         timestamps = review_timestamps(clip_duration(clip))
     frames = []
     for number, timestamp in enumerate(timestamps, 1):
         frame = directory / f"frame-{number}.jpg"
-        subprocess.run(
-            ["ffmpeg", "-nostdin", "-y", "-loglevel", "error", "-ss", f"{timestamp:.6f}",
-             "-i", str(clip), "-frames:v", "1",
-             "-vf", "scale=512:512:force_original_aspect_ratio=decrease",
-             "-q:v", "4", str(frame)],
-            check=True, capture_output=True, timeout=20,
-        )
-        if frame.is_file() and frame.stat().st_size:
+        if extract_review_frame(clip, frame, timestamp=timestamp):
             frames.append((timestamp, frame))
     if not frames:
         raise ValueError("No review frames could be extracted from this clip.")
@@ -68,17 +74,25 @@ def review_transition(outgoing, incoming, directory, planned_before, planned_aft
         duration = clip_duration(clip)
         if not math.isfinite(duration) or duration <= 0:
             raise ValueError("The clip duration could not be read.")
-        margin = min(0.09, duration / 8)
         offset = min(0.45, duration / 3)
-        timestamps = [duration - offset, duration - margin] if at_end else [margin, offset]
         frame_dir = directory / label
         frame_dir.mkdir()
-        evidence = clip_evidence(clip, frame_dir, timestamps)
-        if len(evidence) != len(timestamps):
+        edge = frame_dir / "boundary.jpg"
+        if not extract_review_frame(clip, edge, last=at_end):
             raise ValueError("Transition frames are incomplete.")
-        frames.extend((timestamp, path, label) for timestamp, path in evidence)
+        nearby_time = duration - offset if at_end else offset
+        nearby = frame_dir / "nearby.jpg"
+        if not extract_review_frame(clip, nearby, timestamp=nearby_time):
+            raise ValueError("Transition frames are incomplete.")
+        context = (nearby_time, nearby, label)
+        frames.extend(
+            (context, (None, edge, "Outgoing shot: exact last video frame"))
+            if at_end else ((None, edge, "Incoming shot: exact first video frame"), context)
+        )
     result = ask_qwen(
         "Review whether the visual transition feels natural using the labeled frames on both sides. "
+        "Compare the exact last frame of the outgoing shot with the exact first frame of the incoming shot "
+        "first. Use the nearby frames to assess how movement leads into and out of this boundary. "
         "Prioritize spatial continuity. Match each visible person across the boundary and compare where "
         "they end and begin relative to fixed landmarks and other people. Flag unexplained relocations, "
         "people swapping places, or sudden changes in distance during continuous action. A new camera "
