@@ -10,7 +10,7 @@ from export_project import export_project
 from prepare_timeline import ASPECT_SIZES, timeline_document
 from studio_render import RenderClient, RenderError
 from studio_storage import ProductionCancelled, atomic_json, check_cancelled, gpu_lock, progress, read_json
-from studio_writer import DEFAULT_WRITER_PROMPT, plan_and_write, qwen_ready, revise_shot
+from studio_writer import DEFAULT_WRITER_PROMPT, plan_and_write, qwen_ready, read_reference_notes, revise_shot
 
 
 def wait_for_models(client, project, profile_id, *, needs_qwen, can_cancel=True):
@@ -40,7 +40,8 @@ def prepare_revision(project, revision, pictures, writer_prompt):
         plan["shots"][index]["prompt"] = revision["prompt"]
     else:
         progress(project, "writing", total=len(plan["shots"]))
-        revise_shot(plan, index, revision["feedback"], pictures, writer_prompt)
+        revise_shot(plan, index, revision["feedback"], pictures, writer_prompt,
+                    reference_notes=read_reference_notes(project))
     document["timeline"]["boxes"][index]["prompt"] = plan["shots"][index]["prompt"]
     return {"plan": plan, "document": document, "project_id": parent["project_id"],
             "selection": {"kind": "boxes", "ids": [f"shot-{index + 1:02d}"], "rerender": True},

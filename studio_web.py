@@ -24,7 +24,8 @@ from studio_profiles import MAX_LORAS, SELECTION_PREFIX, default_settings, selec
 from studio_refine import MAX_REVISED_PROMPT, refine_clip, revision_inputs
 from studio_render import RenderClient, RenderError
 from studio_storage import atomic_json, gpu_lock, progress, read_json
-from studio_writer import DEFAULT_WRITER_PROMPT, MAX_WRITER_PROMPT, bind_shot_references, referenced_slots
+from studio_writer import (DEFAULT_WRITER_PROMPT, MAX_REFERENCE_NOTE, MAX_WRITER_PROMPT,
+                           bind_shot_references, read_reference_notes, referenced_slots)
 
 ROOT = Path(os.environ.get("STUDIO_PROJECTS", "/workspace/studio/projects"))
 HERE = Path(__file__).resolve().parent
@@ -67,12 +68,17 @@ def stage(payload):
         raise ValueError("Enter a shot idea or story of up to 20,000 characters.")
     if not isinstance(images, list) or not 1 <= len(images) <= 9:
         raise ValueError("Select one to nine reference images.")
+    descriptions = payload.get("image_notes", [""] * len(images))
+    if not isinstance(descriptions, list) or len(descriptions) != len(images) or any(
+            not isinstance(note, str) or len(note) > MAX_REFERENCE_NOTE for note in descriptions):
+        raise ValueError(f"Provide up to {MAX_REFERENCE_NOTE:,} characters of notes per reference image.")
     project = ROOT / uuid.uuid4().hex
     project.mkdir(parents=True)
     try:
         (project / "story.txt").write_text(story.strip(), encoding="utf-8")
         (project / "writer-prompt.txt").write_text(writer_prompt.strip() or DEFAULT_WRITER_PROMPT, encoding="utf-8")
-        for index, encoded in enumerate(images, 1):
+        notes = {}
+        for index, (encoded, description) in enumerate(zip(images, descriptions), 1):
             if not isinstance(encoded, str) or len(encoded) > 4 * ((MAX_IMAGE + 2) // 3):
                 raise ValueError("Each reference image must be 8 MiB or smaller.")
             data = base64.b64decode(encoded, validate=True)
@@ -91,7 +97,12 @@ def stage(payload):
                     if image.getexif().get(274) in (5, 6, 7, 8):
                         width, height = height, width
                     aspect = "9:16" if height > width else "16:9"
-            (project / f"reference-{index:02d}.{extension}").write_bytes(data)
+            filename = f"reference-{index:02d}.{extension}"
+            (project / filename).write_bytes(data)
+            if note := description.strip():
+                notes[filename] = note
+        if notes:
+            atomic_json(project / "image-notes.json", notes)
         if settings is not None:
             try:
                 options = RenderClient().model_options()
@@ -147,7 +158,8 @@ def stage_revision(parent, payload):
     project = ROOT / uuid.uuid4().hex
     project.mkdir()
     try:
-        for path in [parent / "story.txt", parent / "writer-prompt.txt", *sorted(parent.glob("reference-*"))]:
+        for path in [parent / "story.txt", parent / "writer-prompt.txt", parent / "image-notes.json",
+                     *sorted(parent.glob("reference-*"))]:
             if path.is_file():
                 shutil.copyfile(path, project / path.name)
         meta = read_json(parent / "project.json")
@@ -210,6 +222,7 @@ def project_data(project, details=False):
         result["refinements"] = latest_reviews
         result["story"] = (project / "story.txt").read_text(encoding="utf-8")
         result["references"] = [path.name for path in sorted(project.glob("reference-*"))]
+        result["image_notes"] = read_reference_notes(project)
         result["clips"] = [path.name for path in sorted((project / "clips").glob("shot-*.mp4"))]
         shot_file = project / "shots.json"
         result["shots"] = read_json(shot_file)["shots"] if shot_file.is_file() else []

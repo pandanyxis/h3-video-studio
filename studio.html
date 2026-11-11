@@ -87,6 +87,11 @@ input::file-selector-button { background:#26354a; border:0; border-radius:5px; c
 .steps .active .step-number,.steps .complete .step-number { background:#223c30; border-color:#6aa281; color:var(--accent); }
 .steps .active strong { color:var(--accent); }
 .thumbnails { display:flex; flex-wrap:wrap; gap:10px; }
+.reference-fields { display:grid; gap:10px; }
+.reference-field { display:grid; grid-template-columns:85px minmax(0,1fr); gap:12px; align-items:start; }
+.reference-field label { display:grid; gap:5px; }
+.reference-field textarea { min-height:76px; padding:9px; font-weight:400; }
+.saved-reference-note { overflow-wrap:anywhere; white-space:pre-wrap; }
 figure { margin:0; width:85px; }
 figure img { width:85px; height:70px; object-fit:cover; border-radius:7px; border:1px solid #38465a; }
 figcaption { font-size:10px; color:var(--muted); margin-top:4px; }
@@ -143,7 +148,7 @@ summary { cursor:pointer; font-size:13px; font-weight:550; }
           <label for="images">Reference images</label>
           <span class="hint" id="limits">Characters, locations, or objects. Add 1–9 images, up to 8 MiB each.</span>
           <input id="images" type="file" multiple required accept="image/png,image/jpeg,image/webp" aria-describedby="limits">
-          <div class="thumbnails" id="previews"></div>
+          <div class="reference-fields" id="previews"></div>
           <label for="profile">Render profile</label>
           <select id="profile">
             <option value="studio-turbo8">Studio H3 Turbo 8-step</option>
@@ -435,7 +440,15 @@ function showProject(project) {
   }
   pipeline(stage);
   if (state.referenceId !== project.id) {
-    $('#saved-images').replaceChildren(...project.references.map((name,i) => thumbnail(base + '/' + name,'Reference ' + (i+1))));
+    $('#saved-images').replaceChildren(...project.references.map((name,i) => {
+      const figure = thumbnail(base + '/' + name,'Reference ' + (i+1));
+      if (project.image_notes?.[name]) {
+        const caption = figure.querySelector('figcaption');
+        caption.classList.add('saved-reference-note');
+        caption.append(document.createElement('br'), project.image_notes[name]);
+      }
+      return figure;
+    }));
     state.referenceId = project.id;
   }
   const signature = JSON.stringify([project.id,project.shots]);
@@ -547,9 +560,25 @@ function encode(file) {
   });
 }
 $('#images').addEventListener('change', () => {
+  const notes = new Map([...$('#previews').querySelectorAll('textarea')].map(field => [field.dataset.file,field.value]));
+  const files = [...$('#images').files];
   state.previewUrls.forEach(url => URL.revokeObjectURL(url));
-  state.previewUrls = [...$('#images').files].map(file => URL.createObjectURL(file));
-  $('#previews').replaceChildren(...state.previewUrls.map((url,i) => thumbnail(url,'Reference ' + (i+1))));
+  state.previewUrls = files.map(file => URL.createObjectURL(file));
+  $('#previews').replaceChildren(...state.previewUrls.map((url,i) => {
+    const row = document.createElement('div');
+    row.className = 'reference-field';
+    const label = document.createElement('label');
+    label.textContent = 'Reference ' + (i+1) + ' notes (optional)';
+    const field = document.createElement('textarea');
+    const file = files[i];
+    field.dataset.file = JSON.stringify([file.name,file.size,file.lastModified]);
+    field.maxLength = 1000;
+    field.placeholder = 'For example, Eva is on the left and Noor is on the right. Use this image for their appearance.';
+    field.value = notes.get(field.dataset.file) || '';
+    label.append(field);
+    row.append(thumbnail(url,'Reference ' + (i+1)),label);
+    return row;
+  }));
 });
 let loraOptions;
 let maxLoras;
@@ -656,6 +685,7 @@ $('#create-form').addEventListener('submit',async event => {
     const result = await post('/projects',{
       story:$('#story').value, profile:$('#profile').value, aspect:$('#aspect').value,
       writer_prompt:$('#writer-prompt').value,
+      image_notes:[...$('#previews').querySelectorAll('textarea')].map(field => field.value),
       images:await Promise.all(files.map(encode)),
       ...(custom ? {render_settings:renderSettings} : {})
     });

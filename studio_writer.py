@@ -13,6 +13,13 @@ from studio_storage import atomic_json, check_cancelled, progress, read_json
 
 QWEN_URL = "http://127.0.0.1:8080"
 MAX_WRITER_PROMPT = 12000
+MAX_REFERENCE_NOTE = 1000
+REFERENCE_ROLE_INSTRUCTIONS = (
+    "Treat the user's notes on reference images as the assigned visual roles. Match named people to their "
+    "described positions or features in the reference. When one image contains several subjects, distinguish "
+    "them in the shot description and bind each relevant subject to its location in that @imageN reference. "
+    "Apply a location, wardrobe, or style reference only to its assigned role. "
+)
 DEFAULT_WRITER_PROMPT = """Write precise English video direction for MiniMax H3. Preserve the user's intent and the planned action. Describe requested visible action directly and literally, without euphemisms or unrelated embellishment.
 
 Describe each shot in time order: the starting pose and placement, the trigger for movement, how the action develops, and the final pose or position. Name the subject of each movement. For important gestures, specify the relevant limb or object, its direction and speed, what it contacts, and when it settles. Where relevant, describe weight shifts, planted feet, grip, gaze, and the physical reaction to contact. Fit the number of actions and their timing to the shot duration.
@@ -29,13 +36,22 @@ def qwen_ready():
         return response.status == 200
 
 
-def ask_qwen(instructions, text, pictures, *, clip_frames=()):
+def read_reference_notes(project):
+    path = Path(project) / "image-notes.json"
+    return read_json(path) if path.is_file() else {}
+
+
+def ask_qwen(instructions, text, pictures, *, clip_frames=(), reference_notes=None):
     content = [{"type": "text", "text": text}]
+    notes = reference_notes or {}
     for slot, path in pictures:
         mime = mimetypes.guess_type(path.name)[0]
         encoded = base64.b64encode(path.read_bytes()).decode("ascii")
+        label = f"Reference @{slot}"
+        if note := notes.get(path.name):
+            label += f"\nUser's description and intended use: {note}"
         content.extend([
-            {"type": "text", "text": f"Reference @{slot}"},
+            {"type": "text", "text": label},
             {"type": "image_url", "image_url": {"url": f"data:{mime};base64,{encoded}"}},
         ])
     for timestamp, path in clip_frames:
@@ -100,13 +116,14 @@ def bind_shot_references(prompt, shot, slots, *, existing=()):
     return prompt
 
 
-def suggest_revision(plan, index, feedback, pictures, writer_prompt, *, clip_frames=()):
+def suggest_revision(plan, index, feedback, pictures, writer_prompt, *, clip_frames=(), reference_notes=None):
     shots = plan["shots"]
     shot = shots[index]
     instructions = (
         "Revise only the selected English MiniMax H3 video prompt according to the user's feedback. "
         "Keep the shot duration, reference identities and continuity with the adjacent shots. "
         "Return a JSON object with a nonempty string named prompt. Use only supplied @imageN labels. "
+        + REFERENCE_ROLE_INSTRUCTIONS
     )
     if clip_frames:
         instructions += (
@@ -121,7 +138,7 @@ def suggest_revision(plan, index, feedback, pictures, writer_prompt, *, clip_fra
             "story": plan["story"], "previous": shots[index - 1] if index else None,
             "shot": shot, "next": shots[index + 1] if index + 1 < len(shots) else None,
             "feedback": feedback,
-        }, ensure_ascii=False), pictures, clip_frames=clip_frames,
+        }, ensure_ascii=False), pictures, clip_frames=clip_frames, reference_notes=reference_notes,
     )
     prompt = written.get("prompt") if isinstance(written, dict) else None
     if not isinstance(prompt, str) or not prompt.strip():
@@ -132,11 +149,13 @@ def suggest_revision(plan, index, feedback, pictures, writer_prompt, *, clip_fra
     return {"prompt": prompt, "observations": observations.strip() if isinstance(observations, str) else ""}
 
 
-def revise_shot(plan, index, feedback, pictures, writer_prompt):
-    plan["shots"][index]["prompt"] = suggest_revision(plan, index, feedback, pictures, writer_prompt)["prompt"]
+def revise_shot(plan, index, feedback, pictures, writer_prompt, *, reference_notes=None):
+    plan["shots"][index]["prompt"] = suggest_revision(
+        plan, index, feedback, pictures, writer_prompt, reference_notes=reference_notes)["prompt"]
 
 
 def plan_and_write(story, pictures, project=None, writer_prompt=DEFAULT_WRITER_PROMPT):
+    notes = read_reference_notes(project) if project else {}
     if project:
         check_cancelled(project)
         progress(project, "planning")
@@ -153,6 +172,7 @@ def plan_and_write(story, pictures, project=None, writer_prompt=DEFAULT_WRITER_P
         "Split any beat that cannot fit within ten seconds. Set cut to true only where the next shot "
         "starts a distinct scene or the story calls for a hard camera cut. "
         "Ground character identity, clothing, objects and locations in the reference images. "
+        + REFERENCE_ROLE_INSTRUCTIONS +
         "For every shot, include a reference_slots array of supplied imageN labels, without the @ prefix. "
         "List the references for every person, object or setting that appears in that shot, even if it "
         "appeared in the previous shot. Use an empty array only for a deliberate cutaway with no relevant reference. "
@@ -161,7 +181,7 @@ def plan_and_write(story, pictures, project=None, writer_prompt=DEFAULT_WRITER_P
         "Preserve the user's intent and character identities. Use only supplied @imageN "
         "labels for visual references. Connect each shot's opening state to the previous "
         "closing state when the action is continuous. Keep actions feasible in a short clip.",
-        story, pictures,
+        story, pictures, reference_notes=notes,
     )
     shots = validate_plan(plan, require_duration=not resumed)
     if saved:
@@ -174,10 +194,11 @@ def plan_and_write(story, pictures, project=None, writer_prompt=DEFAULT_WRITER_P
         "Write one prompt per planned shot and fit its movement and sounds into duration_seconds. "
         "Each string must be a self-contained prompt, never a list of suggestions or placeholders. "
         "Use supplied @imageN labels to bind the relevant visual references to subjects. "
+        + REFERENCE_ROLE_INSTRUCTIONS +
         "Include every reference_slots entry for this shot with an @ prefix, even if it was used in a previous shot. "
         "Use only the supplied labels. Follow these writing instructions within that output format:\n\n"
         + writer_prompt,
-        json.dumps({"story": story, "shots": shots}, ensure_ascii=False), pictures,
+        json.dumps({"story": story, "shots": shots}, ensure_ascii=False), pictures, reference_notes=notes,
     )
     prompts = written.get("prompts") if isinstance(written, dict) else None
     if not isinstance(prompts, list) or len(prompts) != len(shots):

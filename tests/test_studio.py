@@ -36,6 +36,22 @@ def shot_plan(count=5):
 
 
 class WriterTests(unittest.TestCase):
+    def test_reference_notes_are_attached_to_the_matching_qwen_image(self):
+        with tempfile.TemporaryDirectory() as folder:
+            first, second = (Path(folder) / name for name in ("reference-01.png", "reference-02.png"))
+            for path in (first, second):
+                path.write_bytes(base64.b64decode(image_data()))
+            response = BytesIO(b'{"choices":[{"message":{"content":"{}"}}]}')
+            with patch.dict(writer.os.environ, {"LLAMA_API_KEY": "test"}), \
+                    patch.object(writer, "urlopen", return_value=response) as call:
+                writer.ask_qwen("system", "story", [("image17", first), ("image18", second)],
+                               reference_notes={second.name: "Eva is on the left. Use this for appearance."})
+            content = json.loads(call.call_args.args[0].data)["messages"][1]["content"]
+            self.assertEqual(content[1]["text"], "Reference @image17")
+            self.assertIn("Reference @image18\n", content[3]["text"])
+            self.assertIn("Eva is on the left.", content[3]["text"])
+            self.assertEqual(content[4]["type"], "image_url")
+
     def test_review_frame_count_scales_with_clip_length(self):
         for duration, count in ((0.5, 3), (1, 3), (3, 6), (5, 9), (10, 15)):
             with self.subTest(duration=duration):
@@ -236,7 +252,9 @@ class WebTests(unittest.TestCase):
         self.assertFalse(finished.exists())
 
     def test_refinement_drafts_without_rendering_and_uses_the_approved_prompt(self):
-        parent = web.stage({"story": "A boat", "images": [image_data()]})
+        parent = web.stage({"story": "A boat", "images": [image_data()], "image_notes": ["Use this for the boat."]})
+        self.assertEqual(web.project_data(parent, details=True)["image_notes"],
+                         {"reference-01.png": "Use this for the boat."})
         (parent / "film.mp4").write_bytes(b"original")
         plan = {**shot_plan(1), "story": "A boat"}
         plan["shots"][0]["prompt"] = "@image17 boat moves."
@@ -263,6 +281,7 @@ class WebTests(unittest.TestCase):
             }) as response:
                 child = web.ROOT / json.load(response)["id"]
             schedule.assert_called_once_with(child)
+            self.assertEqual(writer.read_reference_notes(child), writer.read_reference_notes(parent))
             with patch.object(run_studio, "revise_shot") as writer_call:
                 state = run_studio.prepare_revision(child, read_json(child / "revision.json"), [], "")
                 writer_call.assert_not_called()

@@ -4,7 +4,7 @@ import math
 import subprocess
 
 from studio_storage import read_json
-from studio_writer import DEFAULT_WRITER_PROMPT, suggest_revision
+from studio_writer import DEFAULT_WRITER_PROMPT, read_reference_notes, suggest_revision
 
 MAX_FEEDBACK = 4000
 MAX_REVISED_PROMPT = 12000
@@ -65,7 +65,10 @@ def refine_clip(project, directory, request):
                 enumerate(sorted(project.glob("reference-*")), 17)]
     instructions = project / "writer-prompt.txt"
     writer_prompt = instructions.read_text(encoding="utf-8") if instructions.is_file() else DEFAULT_WRITER_PROMPT
-    proposal = suggest_revision(plan, index, feedback, pictures, writer_prompt, clip_frames=frames)
+    proposal = suggest_revision(
+        plan, index, feedback, pictures, writer_prompt, clip_frames=frames,
+        reference_notes=read_reference_notes(project),
+    )
     if len(proposal["prompt"]) > MAX_REVISED_PROMPT:
         raise ValueError("The proposed prompt is too long. Try refining the clip with more focused feedback.")
     return {
