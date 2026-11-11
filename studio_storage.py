@@ -8,6 +8,15 @@ import time
 import uuid
 
 
+class ProductionCancelled(Exception):
+    """The user stopped this Studio production."""
+
+
+def check_cancelled(project):
+    if (Path(project) / "cancel.request").is_file():
+        raise ProductionCancelled()
+
+
 def read_json(path):
     return json.loads(Path(path).read_text(encoding="utf-8"))
 

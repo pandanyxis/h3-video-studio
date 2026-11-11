@@ -1,53 +1,42 @@
-# Zelf verder bouwen in ComfyUI
+# Customize workflows in ComfyUI
 
-Open een workflow uit **Personal** in ComfyUI. Gebruik de variant met `text-to-video` voor T2V en `image-to-video` voor I2V. De bestandsnaam vermeldt ook welk model wordt geladen: `minimax` of `eros`.
+Open a workflow under **Personal** in ComfyUI. Use the `text-to-video` variant for T2V and `image-to-video` for I2V. The filename also identifies the selected model, such as `minimax` or `eros`.
 
-De indeling loopt van links naar rechts:
-
-| Groep | Wat je hier doet |
+| Group | Controls |
 |---|---|
-| 1 · Invoer | Prompt schrijven, startafbeelding kiezen bij I2V, beeldformaat en videoduur instellen. |
-| 2 · Modellen | Diffusiemodel, Qwen3-VL-tekstencoder en audio/video-VAE laden. |
-| 3 · LoRA’s en preview | Eigen stijl-LoRA’s toevoegen en de preview instellen. De vaste Turbo-LoRA hoort bij de 8-step-opzet. |
-| 4 · Generatie | Invoer en modellen samenbrengen voor de videogeneratie. |
-| 5 · Sampling | Seed, sampler en de bijbehorende stappen instellen. |
-| 6 · Video-uitvoer | Video en audio decoderen, combineren en het resultaat bewaren. |
+| 1 · Inputs | Prompt, starting image for I2V, aspect ratio, and video duration |
+| 2 · Models | Diffusion model, Qwen3-VL text encoder, and audio and video VAEs |
+| 3 · LoRAs and preview | Style LoRAs and preview settings. The fixed Turbo LoRA belongs to the eight-step setup. |
+| 4 · Generation | Combine inputs and models for video generation |
+| 5 · Sampling | Seed, sampler, and sampling steps |
+| 6 · Video output | Decode and combine audio and video, then save the result |
 
-Sla eerst een kopie onder jouw eigen naam op. Zo kun je experimenteren en de meegeleverde versie terugvinden. Een andere checkpoint of LoRA kan eigen instellingen of een andere workflow nodig hebben.
+Use **Save As** to keep your own copy. A different checkpoint or LoRA may require different settings or a different workflow.
 
-## Extra Civitai-modellen
+## Extra Civitai models
 
-Voeg bij de pod of template de gewenste identifiers toe. Meerdere waarden scheid je met komma’s.
+Add comma-separated identifiers to the pod or template.
 
-| Omgevingsvariabele | Bestemming |
+| Environment variable | Destination |
 |---|---|
-| `CIVITAI_DIFFUSION_MODELS` | Modellen voor de diffusion/UNET-loader |
-| `CIVITAI_LORAS` | LoRA’s |
-| `CIVITAI_CHECKPOINTS` | Complete checkpoints voor een checkpoint-loader |
+| `CIVITAI_DIFFUSION_MODELS` | Diffusion models for the UNET loader |
+| `CIVITAI_LORAS` | LoRAs |
+| `CIVITAI_CHECKPOINTS` | Complete checkpoints for a checkpoint loader |
 
-Gebruik `version:123456` voor een specifieke modelversie. Voor een specifieke quantisatie gebruik je de Civitai-model-URL met `modelVersionId` én `fileId`. Zet je token uitsluitend in `CIVITAI_TOKEN` of `civitai_token`.
+Use `version:123456` to select a version. For a specific quantization, use the Civitai URL with both `modelVersionId` and `fileId`. Set the token in `CIVITAI_TOKEN` or `civitai_token`.
 
-De downloader controleert de SHA256-hash uit Civitai. Selecteer na het downloaden het bestand in de passende loader. Als het nog niet zichtbaar is, vernieuw de modellenlijst of herlaad ComfyUI.
+The downloader verifies the SHA-256 from Civitai. Select the downloaded file in the appropriate loader. If it is missing from the list, refresh the model list or reload ComfyUI.
 
-## Je eigen werk bewaren
+## Save your work
 
-Deze opzet gebruikt alleen tijdelijke podopslag. Download je aangepaste workflow-JSON en je video's voordat je de pod stopt of verwijdert. Ook chats en geüploade afbeeldingen moet je zelf bewaren als je ze wilt houden.
+Download customized workflow JSON, videos, chats, and uploaded images before stopping or deleting a pod that uses temporary storage.
 
-Wil je jouw aangepaste workflow bij elke nieuwe pod terugzien? Exporteer de JSON, vervang het bijbehorende `workflow-*.json`-bestand in deze repository en push de wijziging naar `main`. GitHub bouwt dan een nieuwe image. Gebruik die nieuwe image voor je volgende pod. Reeds aangemaakte pods krijgen deze wijziging niet automatisch.
+To ship a customized workflow with future pods, export its JSON, replace the matching `workflow-*.json` in this repository, and push to `main`. GitHub builds a new image for subsequent deployments.
 
-`layout-workflows.py` past de meegeleverde groepsindeling opnieuw toe op de zes workflows. Maak een reservekopie voordat je het script op een zelf aangepaste workflow gebruikt; nieuwe nodetypes vereisen eerst een uitbreiding van de indeling in het script.
+`layout-workflows.py` reapplies the supplied layout to the six workflows. Back up custom workflows before using it. New node types need to be added to the layout script first.
 
-## Meer geheugen voor video
+## Free GPU memory for video
 
-Met `ENABLE_QWEN=false` start de aparte Qwen-chatserver niet mee en blijft meer GPU-geheugen beschikbaar voor video. De Qwen3-VL-tekstencoder binnen de video-workflow blijft nodig. Een hogere resolutie of langere video vraagt meer geheugen en rekentijd.
+Set `ENABLE_QWEN=false` to run ComfyUI without the separate Qwen chat server. The video workflow still requires the Qwen3-VL text encoder. Higher resolutions and longer videos require more memory and compute time.
 
-## Automatisch geheugen vrijgeven
-
-De image bevat `combined-auto-unload`. Na de laatste generatie in de wachtrij,
-ook bij een uitvoerfout, vraagt deze ComfyUI om modellen te unloaden en de
-uitvoeringscache te wissen. ComfyUI ruimt daarna ongebruikte objecten en GPU-cache
-op vanuit de uitvoeringsthread. Binnen een batch blijven modellen geladen;
-de volgende batch laadt ze opnieuw. Modelbestanden en opgeslagen resultaten
-blijven op schijf. Dit geldt voor alle workflows zonder extra canvasnodes.
-Bouw de image opnieuw en start ComfyUI met die image om dit op een bestaande pod
-te activeren.
+The image includes `combined-auto-unload`. After the last queued generation, including after an execution error, it asks ComfyUI to unload models and clear execution caches. Models stay loaded within a batch and reload for the next batch. This applies to all workflows without requiring extra canvas nodes.

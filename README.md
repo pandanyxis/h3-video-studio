@@ -1,41 +1,43 @@
 # H3 Video Studio
 
-Voer een verhaal en één tot negen referentiebeelden in. Studio maakt samenhangende shots met MiniMax H3 en exporteert ze als één MP4. De browserinterface staat in `studio.html` en de projectservice in `studio_web.py`.
+Turn a story and one to nine reference images into a film with MiniMax H3. The Studio browser interface is in `studio.html` and the project service is in `studio_web.py`.
 
-Je voert een shotidee of verhaal in. De eigen Studio-planner bepaalt met Qwen hoeveel shots het verhaal nodig heeft, van één tot twintig. Hij kiest per shot een passende lengte. MiniMax H3 rondt af op zijn eigen framestappen, met maximaal tien seconden per clip. Daarna schrijft de eigen Studio Writer in een aparte stap de volledige H3-prompt per shot, inclusief beweging, camera, geluid en begin- en eindstand. Beide stappen staan in `studio_writer.py` en gebruiken de lokale Qwen-server. ComfyUI met de H3 Continuity-renderlaag rendert de clips op de GPU. Runpod levert de GPU, opslag en SSH-toegang. Zie [het modelprofiel](runpod/RUNPOD-MODELS.md) voor de modellen.
+The local Qwen planner chooses one to twenty shots and assigns a duration to each. H3 rounds durations to its native frame grid and each clip stays within ten seconds. The Studio Writer then writes an H3 prompt for each shot with movement, framing, sound, and opening and closing states. Both steps are implemented in `studio_writer.py`. ComfyUI and H3 Continuity render the clips on the Runpod GPU. See [Runpod model configuration](runpod/RUNPOD-MODELS.md).
 
-## GPU-host starten
+## Start the GPU host
 
-GitHub Actions bouwt de image vanaf de repo-root met `runpod/Dockerfile` en publiceert deze naar `ghcr.io/pandanyxis/h3-video-studio`. Gebruik een commit-tag om een specifieke build te starten.
+GitHub Actions builds `runpod/Dockerfile` from the repository root and publishes it to `ghcr.io/pandanyxis/h3-video-studio`. Use a commit tag to deploy a specific build.
 
 ```sh
 python runpod/make_template.py --image ghcr.io/pandanyxis/h3-video-studio:COMMIT_SHA
 ```
 
-Gebruik de gegenereerde configuratie voor een Pod met een RTX PRO 6000 Blackwell 96 GB en CUDA 13 of nieuwer. De template reserveert 50 GB voor de container en 120 GB voor modellen en projecten op `/workspace`. Voor een private image heeft Runpod leesrechten nodig via Container Registry Auth. Zie [de GPU-configuratie](runpod/README.md) voor opslag en toegang.
+Use an RTX PRO 6000 Blackwell with 96 GB VRAM and CUDA 13 or newer. The template allocates 150 GB of temporary container storage. A private image requires read access through Runpod Container Registry Auth. See the [Runpod setup guide](runpod/README.md).
 
-De interface, planner, Writer, render en export draaien allemaal op de Linux-Pod. Maak eenmalig een Runpod Secret `STUDIO_PASSWORD` met een wachtwoord van minstens 16 tekens. Open daarna in Runpod **Connect → HTTP Service (8190)** en log in als `studio`. Elke nieuwe Pod krijgt een eigen HTTPS-link.
+Set `STUDIO_PASSWORD` to a password of at least 16 characters. Open **Connect → HTTP Service (8190)** and sign in as `studio`. Each pod has its own HTTPS URL.
 
-Voeg een verhaal en referentiebeelden toe en klik op **Maak mijn film**. De projectpagina toont de status en biedt de MP4 aan zodra de export klaar is. Je vindt eerdere projecten in de zijbalk. Studio bewaart het shotplan en de prompts en pakt actieve projecten na een herstart weer op. Bij een onderbreking kun je het productielog openen en de verwerking hervatten. Bewaarde clips en renderaanvragen worden hergebruikt. Een mislukte of onzekere GPU-taak kan herstel in de renderdienst vereisen.
+Add a story and reference images, then click **Make my film**. The project page shows the active step, individual clips as they become available, and the finished MP4. Use **Review clips** to request a revision and make a new film version. Use **Stop production** or **Stop all productions** to request cancellation. **Clear projects** deletes saved Studio projects and exports after all productions stop.
 
-## Uitvoeren via SSH
+Studio saves the shot plan, prompts, and render request for recovery. If a render is interrupted, open its production log and resume the project. Recovery requires the project files to remain on disk. Temporary storage is erased when the pod stops, so download your films and clips first.
+
+## Run over SSH
 
 ```sh
-python /opt/studio/run_studio.py verhaal.txt /workspace/studio/projects/proef referentie-a.png
+python /opt/studio/run_studio.py story.txt /workspace/studio/projects/test reference-a.png
 ```
 
-De projectmap bevat het shotplan, de tijdlijn, de render-ID, de losse clips en `film.mp4`. Browserprojecten bewaren ook de invoer en `render.log`. Herhaal het CLI-commando met dezelfde projectmap om een bestaande render op te vragen en de export af te maken. Gebruik voor een nieuw verhaal een nieuwe projectmap.
+The project directory contains the shot plan, timeline, render ID, individual clips, and `film.mp4`. Browser projects also save the original input and `render.log`. Reuse the same project directory to check an existing render and finish its export. Use a new directory for a different story.
 
-## Interface lokaal bekijken
+## Preview the interface locally
 
 ```sh
 python -m pip install -r requirements.txt
 python studio_web.py --projects ./projects
 ```
 
-Open http://localhost:8190 voor een lokaal interfacevoorbeeld. Gebruik de Runpod-versie voor de volledige productie.
+Open [local Studio](http://localhost:8190). Use the Runpod image for full production.
 
-## Controles
+## Checks
 
 ```sh
 python -m pip install -r requirements.txt requests tqdm

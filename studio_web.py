@@ -52,19 +52,19 @@ def stage(payload):
     story, images = payload.get("story"), payload.get("images")
     writer_prompt = payload.get("writer_prompt", "")
     if not isinstance(writer_prompt, str) or len(writer_prompt) > MAX_WRITER_PROMPT:
-        raise ValueError(f"Gebruik maximaal {MAX_WRITER_PROMPT} tekens voor de Writer-instructies.")
+        raise ValueError(f"Use at most {MAX_WRITER_PROMPT} characters for the Writer instructions.")
     profile = payload.get("profile", DEFAULT_PROFILE["id"])
     settings = payload.get("render_settings")
     aspect = payload.get("aspect", "auto")
     if not isinstance(aspect, str) or (aspect != "auto" and aspect not in ASPECT_SIZES):
-        raise ValueError("Kies automatisch, 16:9 of 9:16.")
+        raise ValueError("Choose automatic, 16:9, or 9:16.")
     if settings is None and profile != DEFAULT_PROFILE["id"] and not any(
             profile == item["id"] for item in render_profiles()):
-        raise ValueError("Dit renderprofiel is niet beschikbaar.")
+        raise ValueError("This render profile is unavailable.")
     if not isinstance(story, str) or not story.strip() or len(story) > 20_000:
-        raise ValueError("Voer een shotidee of verhaal in van maximaal 20.000 tekens.")
+        raise ValueError("Enter a shot idea or story of up to 20,000 characters.")
     if not isinstance(images, list) or not 1 <= len(images) <= 9:
-        raise ValueError("Selecteer één tot negen referentiebeelden.")
+        raise ValueError("Select one to nine reference images.")
     project = ROOT / uuid.uuid4().hex
     project.mkdir(parents=True)
     try:
@@ -72,16 +72,16 @@ def stage(payload):
         (project / "writer-prompt.txt").write_text(writer_prompt.strip() or DEFAULT_WRITER_PROMPT, encoding="utf-8")
         for index, encoded in enumerate(images, 1):
             if not isinstance(encoded, str) or len(encoded) > 4 * ((MAX_IMAGE + 2) // 3):
-                raise ValueError("Een referentiebeeld mag maximaal 8 MiB zijn.")
+                raise ValueError("Each reference image must be 8 MiB or smaller.")
             data = base64.b64decode(encoded, validate=True)
             if not data or len(data) > MAX_IMAGE:
-                raise ValueError("Een referentiebeeld is leeg of groter dan 8 MiB.")
+                raise ValueError("A reference image is empty or exceeds 8 MiB.")
             with warnings.catch_warnings():
                 warnings.simplefilter("error", Image.DecompressionBombWarning)
                 with Image.open(BytesIO(data)) as image:
                     extension = {"JPEG": "jpg", "PNG": "png", "WEBP": "webp"}.get(image.format)
                     if not extension:
-                        raise ValueError("Gebruik JPEG-, PNG- of WebP-beelden.")
+                        raise ValueError("Use JPEG, PNG, or WebP images.")
                     image.verify()
             if index == 1 and aspect == "auto":
                 with Image.open(BytesIO(data)) as image:
@@ -94,7 +94,7 @@ def stage(payload):
             try:
                 options = RenderClient().model_options()
             except (OSError, ValueError, RenderError):
-                raise ValueError("ComfyUI kan de geïnstalleerde modellen nog niet ophalen.") from None
+                raise ValueError("ComfyUI cannot list installed models yet.") from None
             profile = selection_profile(settings, options)
         atomic_json(project / "project.json", {
             "title": story.strip().splitlines()[0][:80],
@@ -118,13 +118,13 @@ def set_status(project, status):
 
 def stage_revision(parent, payload):
     if not (parent / "film.mp4").is_file() or not (parent / "production.json").is_file():
-        raise ValueError("Wacht tot de film klaar is om een shot te verbeteren.")
+        raise ValueError("Wait for the film to finish before revising a shot.")
     index, feedback = payload.get("shot"), payload.get("feedback")
     plan = read_json(parent / "production.json")["plan"]
     if type(index) is not int or not 0 <= index < len(plan["shots"]):
-        raise ValueError("Kies een bestaand shot.")
+        raise ValueError("Choose an existing shot.")
     if not isinstance(feedback, str) or not feedback.strip() or len(feedback) > 4000:
-        raise ValueError("Beschrijf in maximaal 4.000 tekens wat beter moet.")
+        raise ValueError("Describe what should change in up to 4,000 characters.")
     project = ROOT / uuid.uuid4().hex
     project.mkdir()
     try:
@@ -134,7 +134,7 @@ def stage_revision(parent, payload):
         meta = read_json(parent / "project.json")
         title = (project / "story.txt").read_text(encoding="utf-8").splitlines()[0][:80]
         atomic_json(project / "project.json", {
-            **meta, "title": f"{title} · Shot {index + 1} herzien",
+            **meta, "title": f"{title} · Shot {index + 1} revised",
             "created": datetime.now(timezone.utc).isoformat(), "parent": parent.name,
         })
         atomic_json(project / "revision.json", {"parent": parent.name, "shot": index, "feedback": feedback.strip()})
@@ -150,6 +150,8 @@ def project_data(project, details=False):
     status = "done" if (project / "film.mp4").is_file() else (project / "status").read_text(encoding="utf-8")
     meta = read_json(project / "project.json") if (project / "project.json").is_file() else {}
     state = read_json(project / "progress.json") if (project / "progress.json").is_file() else {"stage": status}
+    if status in ("queued", "running") and (project / "cancel.request").is_file():
+        state = {**state, "stage": "cancelling"}
     result = {**meta, "id": project.name, "status": status, "progress": state}
     if details:
         result["can_revise"] = status == "done" and (project / "production.json").is_file()
@@ -180,14 +182,17 @@ def render(project, resume=False):
             command.append("--resume")
         with (project / "render.log").open("ab") as log:
             subprocess.run(command, stdout=log, stderr=subprocess.STDOUT, check=True)
+        if read_json(project / "progress.json").get("stage") == "cancelled":
+            set_status(project, "cancelled")
+            return
         if not (project / "film.mp4").is_file():
-            raise RuntimeError("De productie eindigde zonder videobestand.")
+            raise RuntimeError("Production ended without a video file.")
         set_status(project, "done")
     except Exception as error:
         state_file = project / "progress.json"
         state = read_json(state_file) if state_file.is_file() else {}
         if state.get("stage") != "failed":
-            progress(project, "failed", error="De productie is onderbroken. Controleer het productielog en hervat het project.")
+            progress(project, "failed", error="Production was interrupted. Check the production log and resume the project.")
         set_status(project, "failed")
         print(f"Studio project {project.name}: {error}", file=sys.stderr, flush=True)
     finally:
@@ -197,13 +202,42 @@ def render(project, resume=False):
 
 def schedule(project, resume=False):
     with QUEUE_LOCK:
-        if project.name in ACTIVE or (project / "film.mp4").is_file():
+        if (not (project / "status").is_file() or project.name in ACTIVE
+                or (project / "film.mp4").is_file()
+                or (resume and (project / "status").read_text(encoding="utf-8") != "failed")):
             return False
         ACTIVE.add(project.name)
         set_status(project, "queued")
         progress(project, "queued")
         QUEUE.submit(render, project, resume)
     return True
+
+
+def managed_projects():
+    return [path.parent for path in ROOT.glob("*/status")
+            if re.fullmatch(r"[a-f0-9]{32}", path.parent.name) and not path.parent.is_symlink()]
+
+
+def request_cancellation(projects):
+    requested = 0
+    with QUEUE_LOCK:
+        for project in projects:
+            status = project / "status"
+            if status.is_file() and status.read_text(encoding="utf-8") in ("queued", "running"):
+                (project / "cancel.request").touch()
+                requested += 1
+    return requested
+
+
+def clear_projects():
+    with QUEUE_LOCK:
+        projects = managed_projects()
+        if ACTIVE or any((project / "status").read_text(encoding="utf-8") in ("queued", "running")
+                         for project in projects):
+            raise ValueError("Stop active productions before clearing projects.")
+        for project in projects:
+            shutil.rmtree(project)
+    return len(projects)
 
 
 class StudioHandler(BaseHTTPRequestHandler):
@@ -232,17 +266,17 @@ class StudioHandler(BaseHTTPRequestHandler):
         if not getattr(self.server, "public_origin", None):
             if self.local_host():
                 return True
-            self.json(403, error="Open Studio via localhost.")
+            self.json(403, error="Open Studio through localhost.")
             return False
         expected = self.server.studio_auth
         if not expected:
             self.reply(503, "text/plain; charset=utf-8",
-                       "Stel STUDIO_PASSWORD in bij de Runpod-omgeving en start de Pod opnieuw.".encode())
+                       "Set STUDIO_PASSWORD in the Runpod environment and restart the pod.".encode())
             return False
         supplied = self.headers.get("Authorization", "").encode()
         if hmac.compare_digest(supplied, expected):
             return True
-        self.reply(401, "text/plain; charset=utf-8", "Log in als studio.".encode(), {
+        self.reply(401, "text/plain; charset=utf-8", "Sign in as studio.".encode(), {
             "WWW-Authenticate": 'Basic realm="H3 Video Studio", charset="UTF-8"',
         })
         return False
@@ -256,7 +290,7 @@ class StudioHandler(BaseHTTPRequestHandler):
             if requested:
                 match = re.fullmatch(r"bytes=(\d*)-(\d*)", requested)
                 if not match or not any(match.groups()):
-                    return self.json(416, error="Ongeldig bereik.")
+                    return self.json(416, error="Invalid byte range.")
                 if match[1]:
                     start = int(match[1])
                     end = min(int(match[2]), end) if match[2] else end
@@ -299,23 +333,23 @@ class StudioHandler(BaseHTTPRequestHandler):
                 options = RenderClient().model_options()
                 defaults = default_settings()
             except (OSError, ValueError, RenderError):
-                return self.json(503, error="ComfyUI is nog niet klaar. Probeer de modellen opnieuw te laden.")
+                return self.json(503, error="ComfyUI is not ready yet. Try reloading the models.")
             return self.json(200, **options, defaults=defaults)
         if self.path == "/":
             return self.reply(200, "text/html; charset=utf-8", (HERE / "studio.html").read_bytes())
         if self.path == "/projects":
-            projects = [project_data(path.parent) for path in ROOT.glob("*/status")]
+            projects = [project_data(project) for project in managed_projects()]
             return self.json(200, projects=sorted(projects, key=lambda item: item.get("created", ""), reverse=True))
         match = re.fullmatch(r"/projects/([a-f0-9]{32})(?:/(film\.mp4|shots\.json|render\.log|reference-\d{2}\.(?:png|jpg|webp)|clips/shot-\d{2}\.mp4))?", self.path)
         if not match:
-            return self.json(404, error="Project niet gevonden.")
+            return self.json(404, error="Project not found.")
         project = ROOT / match[1]
         if not (project / "status").is_file():
-            return self.json(404, error="Project niet gevonden.")
+            return self.json(404, error="Project not found.")
         if match[2]:
             path = project / match[2]
             if not path.is_file():
-                return self.json(404, error="Bestand is nog niet beschikbaar.")
+                return self.json(404, error="The file is not available yet.")
             return self.serve_file(path)
         self.json(200, **project_data(project, details=True))
 
@@ -325,30 +359,44 @@ class StudioHandler(BaseHTTPRequestHandler):
         origin = getattr(self.server, "public_origin", None) or f"http://{self.headers.get('Host')}"
         if (self.headers.get("Origin") != origin
                 or self.headers.get_content_type() != "application/json"):
-            return self.json(403, error="Open Studio vanaf het Studio-adres.")
+            return self.json(403, error="Open Studio from its own address.")
+        stop = re.fullmatch(r"/projects/([a-f0-9]{32})/cancel", self.path)
+        if stop:
+            if not request_cancellation([ROOT / stop[1]]):
+                return self.json(409, error="This project is no longer active.")
+            return self.json(202, requested=1)
+        if self.path == "/projects/cancel":
+            return self.json(202, requested=request_cancellation(managed_projects()))
+        if self.path == "/projects/clear":
+            try:
+                return self.json(200, removed=clear_projects())
+            except ValueError as error:
+                return self.json(409, error=str(error))
+            except OSError:
+                return self.json(500, error="Studio could not clear all project files.")
         retry = re.fullmatch(r"/projects/([a-f0-9]{32})/resume", self.path)
         if retry:
             project = ROOT / retry[1]
             if not (project / "status").is_file():
-                return self.json(404, error="Project niet gevonden.")
+                return self.json(404, error="Project not found.")
             if not schedule(project, resume=True):
-                return self.json(409, error="Dit project wordt al verwerkt of is voltooid.")
+                return self.json(409, error="This project cannot be resumed.")
             return self.json(202, id=project.name)
         revision = re.fullmatch(r"/projects/([a-f0-9]{32})/revisions", self.path)
         if self.path != "/projects" and not revision:
-            return self.json(404, error="Onbekend adres.")
+            return self.json(404, error="Unknown address.")
         if revision and not (ROOT / revision[1] / "status").is_file():
-            return self.json(404, error="Project niet gevonden.")
+            return self.json(404, error="Project not found.")
         try:
             length = int(self.headers.get("Content-Length", "0"))
             if not 0 < length <= (32 * 1024 if revision else MAX_REQUEST):
-                return self.json(413, error="De upload is te groot of leeg.")
+                return self.json(413, error="The upload is too large or empty.")
             payload = json.loads(self.rfile.read(length))
             if not isinstance(payload, dict):
-                raise ValueError("Ongeldig project.")
+                raise ValueError("Invalid project.")
             project = stage_revision(ROOT / revision[1], payload) if revision else stage(payload)
         except (ValueError, TypeError, OSError, UnidentifiedImageError, Image.DecompressionBombError, Image.DecompressionBombWarning) as error:
-            return self.json(400, error=str(error) if isinstance(error, ValueError) else "Het referentiebeeld kon niet worden gelezen. Gebruik JPEG, PNG of WebP.")
+            return self.json(400, error=str(error) if isinstance(error, ValueError) else "The reference image could not be read. Use JPEG, PNG, or WebP.")
         schedule(project)
         self.json(202, id=project.name)
 
@@ -363,7 +411,7 @@ def main():
     ROOT.mkdir(parents=True, exist_ok=True)
     pod_id = os.environ.get("RUNPOD_POD_ID", "")
     if pod_id and not re.fullmatch(r"[a-z0-9]+", pod_id):
-        raise SystemExit("Ongeldige RUNPOD_POD_ID.")
+        raise SystemExit("Invalid RUNPOD_POD_ID.")
     server = ThreadingHTTPServer(("0.0.0.0" if pod_id else "127.0.0.1", args.port), StudioHandler)
     server.public_origin = f"https://{pod_id}-{args.port}.proxy.runpod.net" if pod_id else None
     password = os.environ.get("STUDIO_PASSWORD", "")

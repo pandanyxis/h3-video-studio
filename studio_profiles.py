@@ -45,9 +45,9 @@ def write_profile(base, profile_id, title, model, lora, steps, strength):
 
 def validate_sampling(steps, strength):
     if type(steps) is not int or not 1 <= steps <= 100:
-        raise ValueError("Een profiel vereist 1 tot 100 samplingstappen.")
+        raise ValueError("A profile requires 1 to 100 sampling steps.")
     if type(strength) not in (int, float) or not 0 <= strength <= 2:
-        raise ValueError("Een profiel vereist een LoRA-sterkte van 0 tot 2.")
+        raise ValueError("A profile requires a LoRA strength from 0 to 2.")
 
 
 def default_settings():
@@ -63,15 +63,15 @@ def default_settings():
 
 def selection_profile(settings, options):
     if not isinstance(settings, dict):
-        raise ValueError("Ongeldige renderinstellingen.")
+        raise ValueError("Invalid render settings.")
     model, lora = settings.get("model"), settings.get("lora")
     steps, strength = settings.get("steps"), settings.get("lora_strength")
     validate_sampling(steps, strength)
     if model not in options["models"] or lora not in options["loras"]:
-        raise ValueError("Kies een geïnstalleerd model en een geïnstalleerde LoRA.")
+        raise ValueError("Select an installed model and LoRA.")
 
     base = (PROFILES / "studio-turbo8.json").read_text(encoding="utf-8")
-    profile = build_profile(base, "", "Eigen renderinstellingen", model, lora, steps, float(strength))
+    profile = build_profile(base, "", "Custom render settings", model, lora, steps, float(strength))
     content = json.dumps(profile, sort_keys=True, ensure_ascii=False)
     profile_id = SELECTION_PREFIX + hashlib.sha256(content.encode()).hexdigest()[:40]
     profile["id"] = profile_id
@@ -92,11 +92,11 @@ def main():
                   model, lora, 8, 0.8)
     configured = json.loads(os.environ.get("STUDIO_RENDER_PROFILES") or "[]")
     if not isinstance(configured, list):
-        raise ValueError("STUDIO_RENDER_PROFILES moet een JSON-lijst zijn.")
+        raise ValueError("STUDIO_RENDER_PROFILES must be a JSON array.")
     for config in configured:
         name = config["id"]
         if not re.fullmatch(r"[a-z0-9][a-z0-9_-]{0,55}", name):
-            raise ValueError("Gebruik voor een profiel-ID kleine letters, cijfers, - of _.")
+            raise ValueError("Use lowercase letters, digits, hyphens, or underscores in profile IDs.")
         steps = config.get("steps", 8)
         strength = config.get("lora_strength", 0.8)
         validate_sampling(steps, strength)

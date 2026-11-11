@@ -48,7 +48,7 @@ class WriterTests(unittest.TestCase):
                 with patch.object(writer, "ask_qwen", side_effect=[
                     plan, {"prompts": ["@image17 enters.", "The subject turns."]},
                 ]):
-                    result = writer.plan_and_write("Twee shots", pictures)
+                    result = writer.plan_and_write("Two shots", pictures)
                 for shot, reference in zip(result["shots"], expected):
                     self.assertIn(reference, shot["prompt"])
 
@@ -72,7 +72,7 @@ class WriterTests(unittest.TestCase):
     def test_custom_instructions_replace_the_default_only_for_the_writer(self):
         instructions = "Describe when the boat slows and when it stops."
         with patch.object(writer, "ask_qwen", side_effect=[shot_plan(1), {"prompts": ["@image17 boat"]}]) as call:
-            writer.plan_and_write("Een boot", [("image17", None)], writer_prompt=instructions)
+            writer.plan_and_write("A boat", [("image17", None)], writer_prompt=instructions)
         self.assertNotIn(instructions, call.call_args_list[0].args[0])
         self.assertTrue(call.call_args_list[1].args[0].endswith(instructions))
         self.assertIn("exactly 1 nonempty strings", call.call_args_list[1].args[0])
@@ -83,7 +83,7 @@ class WriterTests(unittest.TestCase):
                 plan = shot_plan(count)
                 prompts = {"prompts": ["@image17 boat"] * count}
                 with patch.object(writer, "ask_qwen", side_effect=[plan, prompts]) as call:
-                    result = writer.plan_and_write("Een boot", [("image17", None)])
+                    result = writer.plan_and_write("A boat", [("image17", None)])
                 self.assertEqual(len(result["shots"]), count)
                 self.assertIn(f"exactly {count} nonempty strings", call.call_args.args[0])
 
@@ -92,21 +92,21 @@ class WriterTests(unittest.TestCase):
         plan["shots"][0]["duration_seconds"] = 11
         with patch.object(writer, "ask_qwen", return_value=plan):
             with self.assertRaisesRegex(ValueError, "duration from 1 to 10"):
-                writer.plan_and_write("Een boot", [("image17", None)])
+                writer.plan_and_write("A boat", [("image17", None)])
 
     def test_writer_failure_reuses_saved_plan_and_rejects_unknown_references(self):
         with tempfile.TemporaryDirectory() as folder:
             project = Path(folder)
             with patch.object(writer, "ask_qwen", side_effect=[shot_plan(), OSError("offline")]):
                 with self.assertRaises(OSError):
-                    writer.plan_and_write("Een boot", [("image17", None)], project)
+                    writer.plan_and_write("A boat", [("image17", None)], project)
             self.assertTrue((project / "plan.json").is_file())
             with patch.object(writer, "ask_qwen", return_value={"prompts": ["@image99 boat"] * 5}) as call:
                 with self.assertRaisesRegex(ValueError, "unknown picture slot"):
-                    writer.plan_and_write("Een boot", [("image17", None)], project)
+                    writer.plan_and_write("A boat", [("image17", None)], project)
                 self.assertEqual(call.call_count, 1)
             with patch.object(writer, "ask_qwen", return_value={"prompts": ["@image17 boat"] * 5}):
-                result = writer.plan_and_write("Een boot", [("image17", None)], project)
+                result = writer.plan_and_write("A boat", [("image17", None)], project)
                 self.assertTrue(all(shot["prompt"] for shot in result["shots"]))
 
 
@@ -159,7 +159,7 @@ class WebTests(unittest.TestCase):
 
     def test_upload_status_files_and_video_range(self):
         with patch.object(web, "schedule") as schedule:
-            response = self.post("/projects", {"story": "Een boot", "images": [image_data()]})
+            response = self.post("/projects", {"story": "A boat", "images": [image_data()]})
             self.assertEqual(response.status, 202)
             identifier = json.load(response)["id"]
             schedule.assert_called_once()
@@ -167,7 +167,7 @@ class WebTests(unittest.TestCase):
         (project / "film.mp4").write_bytes(b"0123456789")
         status = json.load(urlopen(self.url + "/projects/" + identifier))
         self.assertEqual(status["status"], "done")
-        self.assertEqual(status["story"], "Een boot")
+        self.assertEqual(status["story"], "A boat")
         self.assertEqual(status["references"], ["reference-01.png"])
         response = urlopen(Request(self.url + "/projects/" + identifier + "/film.mp4", headers={"Range": "bytes=3-6"}))
         self.assertEqual(response.status, 206)
@@ -185,13 +185,14 @@ class WebTests(unittest.TestCase):
         self.assertEqual(error.exception.code, 403)
         error.exception.close()
         with self.assertRaises(HTTPError) as error:
-            self.post("/projects", {"story": "Een boot", "images": [base64.b64encode(b"not a picture").decode()]})
+            self.post("/projects", {"story": "A boat", "images": [base64.b64encode(b"not a picture").decode()]})
         self.assertEqual(error.exception.code, 400)
         error.exception.close()
         self.assertEqual(list(web.ROOT.iterdir()), [])
 
     def test_retry_cannot_enqueue_same_project_twice(self):
-        project = web.stage({"story": "Een boot", "images": [image_data()]})
+        project = web.stage({"story": "A boat", "images": [image_data()]})
+        web.set_status(project, "failed")
         with patch.object(web.QUEUE, "submit") as submit:
             try:
                 self.assertTrue(web.schedule(project, resume=True))
@@ -199,6 +200,29 @@ class WebTests(unittest.TestCase):
                 submit.assert_called_once_with(web.render, project, True)
             finally:
                 web.ACTIVE.discard(project.name)
+
+    def test_stop_and_clear_projects_through_http(self):
+        active = web.stage({"story": "A boat", "images": [image_data()]})
+        finished = web.stage({"story": "A train", "images": [image_data()]})
+        web.set_status(finished, "done")
+        other = web.ROOT / "unmanaged"
+        other.mkdir()
+        (other / "status").write_text("done")
+        with self.assertRaises(HTTPError) as error:
+            self.post("/projects/clear", {})
+        self.assertEqual(error.exception.code, 409)
+        error.exception.close()
+        with self.post("/projects/cancel", {}) as response:
+            self.assertEqual(json.load(response), {"requested": 1})
+        self.assertTrue((active / "cancel.request").exists())
+        self.assertFalse((finished / "cancel.request").exists())
+        self.assertEqual(web.project_data(active)["progress"]["stage"], "cancelling")
+        web.set_status(active, "cancelled")
+        with self.post("/projects/clear", {}) as response:
+            self.assertEqual(json.load(response), {"removed": 2})
+        self.assertTrue(other.is_dir())
+        self.assertFalse(active.exists())
+        self.assertFalse(finished.exists())
 
     def test_runpod_proxy_requires_login_and_its_own_https_origin(self):
         self.server.public_origin = "https://testpod-8190.proxy.runpod.net"
@@ -212,7 +236,7 @@ class WebTests(unittest.TestCase):
             self.assertEqual(response.status, 200)
         headers = {"Authorization": self.server.studio_auth.decode(),
                    "Content-Type": "application/json", "Origin": "https://other.example"}
-        payload = json.dumps({"story": "Een boot", "images": [image_data()]}).encode()
+        payload = json.dumps({"story": "A boat", "images": [image_data()]}).encode()
         with self.assertRaises(HTTPError) as error:
             urlopen(Request(self.url + "/projects", data=payload, headers=headers))
         self.assertEqual(error.exception.code, 403)
@@ -228,10 +252,34 @@ class WebTests(unittest.TestCase):
 
 
 class ProductionTests(unittest.TestCase):
+    def test_stop_sends_native_cancel_and_waits_for_terminal_state(self):
+        with tempfile.TemporaryDirectory() as folder:
+            project = Path(folder)
+            state = {"job_id": "job", "plan": {"shots": []}, "document": {}}
+            web.atomic_json(project / "production.json", state)
+            (project / "cancel.request").touch()
+            args = SimpleNamespace(project=project, profile="studio-turbo8")
+            client = unittest.mock.MagicMock()
+
+            def wait_for_cancel(job_id, on_update):
+                self.assertTrue(on_update({"state": "running"}))
+                self.assertTrue(on_update({"state": "needs_reconciliation"}))
+                on_update({"state": "failed"})
+
+            client.wait.side_effect = wait_for_cancel
+            with (
+                patch.object(run_studio, "RenderClient", return_value=client),
+                patch.object(run_studio, "wait_for_models"),
+                self.assertRaises(run_studio.ProductionCancelled),
+            ):
+                run_studio.produce(args)
+            client.cancel.assert_called_once_with("job")
+            client.render.assert_not_called()
+
     def test_project_writer_prompt_reaches_the_production_worker(self):
         with tempfile.TemporaryDirectory() as folder, patch.object(web, "ROOT", Path(folder)):
             instructions = "Keep the camera locked and describe each movement."
-            project = web.stage({"story": "Een boot", "images": [image_data()], "writer_prompt": instructions})
+            project = web.stage({"story": "A boat", "images": [image_data()], "writer_prompt": instructions})
             image = project / "reference-01.png"
             args = SimpleNamespace(project=project, story=project / "story.txt",
                                    references=[image], profile="studio-turbo8")
@@ -241,13 +289,13 @@ class ProductionTests(unittest.TestCase):
                 self.assertRaisesRegex(OSError, "offline"),
             ):
                 run_studio.produce(args)
-            planner.assert_called_once_with("Een boot", [("image17", image)], project,
+            planner.assert_called_once_with("A boat", [("image17", image)], project,
                                             writer_prompt=instructions)
 
     def test_shot_revision_preserves_previous_version_and_uses_native_selection(self):
         with tempfile.TemporaryDirectory() as folder, patch.object(web, "ROOT", Path(folder)):
-            parent = web.stage({"story": "Een boot", "images": [image_data()]})
-            plan = {**shot_plan(2), "story": "Een boot"}
+            parent = web.stage({"story": "A boat", "images": [image_data()]})
+            plan = {**shot_plan(2), "story": "A boat"}
             for shot in plan["shots"]:
                 shot["prompt"] = "@image17 boat"
             document = timeline_document(plan, parent.name, "studio-turbo8")
@@ -256,7 +304,7 @@ class ProductionTests(unittest.TestCase):
             original = {"plan": plan, "document": document, "project_id": "native-project"}
             web.atomic_json(parent / "production.json", original)
             (parent / "film.mp4").write_bytes(b"original")
-            revision = web.stage_revision(parent, {"shot": 1, "feedback": "Laat de boot afremmen."})
+            revision = web.stage_revision(parent, {"shot": 1, "feedback": "Have the boat slow down."})
             pictures = [("image17", revision / "reference-01.png")]
             with patch.object(writer, "ask_qwen", return_value={"prompt": "@image17 boat slows down"}):
                 state = run_studio.prepare_revision(
@@ -279,7 +327,7 @@ class ProductionTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             project = Path(folder)
             story = project / "story.txt"
-            story.write_text("Een boot")
+            story.write_text("A boat")
             image = project / "reference-01.png"
             image.write_bytes(base64.b64decode(image_data()))
             plan = shot_plan(7)
@@ -320,7 +368,7 @@ class ProductionTests(unittest.TestCase):
                     run_studio.produce(args)
                 saved_key = read_json(project / "production.json")["key"]
                 self.assertEqual(run_studio.produce(args).read_bytes(), b"movie")
-                planner.assert_called_once_with("Een boot", [("image17", image)], project,
+                planner.assert_called_once_with("A boat", [("image17", image)], project,
                                                 writer_prompt=writer.DEFAULT_WRITER_PROMPT)
                 client.create.assert_called_once()
                 self.assertEqual(client.render.call_args_list[0], client.render.call_args_list[1])

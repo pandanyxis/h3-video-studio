@@ -8,7 +8,7 @@ import re
 from urllib.request import Request, urlopen
 
 from plan_story import MAX_SHOT_SECONDS, shot_count_instruction, validate_plan
-from studio_storage import atomic_json, progress, read_json
+from studio_storage import atomic_json, check_cancelled, progress, read_json
 
 
 QWEN_URL = "http://127.0.0.1:8080"
@@ -42,7 +42,7 @@ def ask_qwen(instructions, text, pictures):
     if not key:
         access = Path("/workspace/combined/access.json")
         if not access.is_file():
-            raise RuntimeError("Stel LLAMA_API_KEY in op dezelfde sleutel als op de GPU-host en hervat het project.")
+            raise RuntimeError("Set LLAMA_API_KEY to the same key as the GPU host and resume the project.")
         key = read_json(access)["LLAMA_API_KEY"]
     payload = {
         "model": "qwen-hauhau",
@@ -68,8 +68,8 @@ def ask_qwen(instructions, text, pictures):
         try:
             return json.loads(choice["message"]["content"])
         except (TypeError, ValueError):
-            raise ValueError("Qwen gaf geen geldig shotplan of geldige prompts terug. Hervat het project om het opnieuw te proberen.") from None
-    raise ValueError("Qwen bereikte twee keer de uitvoerlimiet. Hervat het project of probeer een korter verhaal.")
+            raise ValueError("Qwen returned an invalid shot plan or invalid prompts. Resume the project to try again.") from None
+    raise ValueError("Qwen reached its output limit twice. Resume the project or try a shorter story.")
 
 
 def referenced_slots(text):
@@ -85,7 +85,7 @@ def bind_shot_references(prompt, shot, slots, *, existing=()):
         planned = []
     if not isinstance(planned, list) or any(
             not isinstance(slot, str) or slot not in slots for slot in planned):
-        raise ValueError("De Planner gaf ongeldige beeldreferenties voor een shot.")
+        raise ValueError("The Planner returned invalid image references for a shot.")
     required = slots if len(slots) == 1 else set(planned)
     missing = (required | set(existing)) - used
     if missing:
@@ -110,7 +110,7 @@ def revise_shot(plan, index, feedback, pictures, writer_prompt):
     )
     prompt = written.get("prompt") if isinstance(written, dict) else None
     if not isinstance(prompt, str) or not prompt.strip():
-        raise ValueError("De Writer gaf geen nieuwe prompt voor dit shot.")
+        raise ValueError("The Writer did not return a revised prompt for this shot.")
     slots = {slot for slot, _ in pictures}
     shot["prompt"] = bind_shot_references(
         prompt.strip(), shot, slots, existing=referenced_slots(shot["prompt"]))
@@ -118,6 +118,7 @@ def revise_shot(plan, index, feedback, pictures, writer_prompt):
 
 def plan_and_write(story, pictures, project=None, writer_prompt=DEFAULT_WRITER_PROMPT):
     if project:
+        check_cancelled(project)
         progress(project, "planning")
     saved = Path(project) / "plan.json" if project else None
     resumed = saved and saved.is_file()
@@ -145,6 +146,7 @@ def plan_and_write(story, pictures, project=None, writer_prompt=DEFAULT_WRITER_P
     shots = validate_plan(plan, require_duration=not resumed)
     if saved:
         atomic_json(saved, plan)
+        check_cancelled(project)
         progress(project, "writing", total=len(shots))
     written = ask_qwen(
         "Convert the supplied shot plan into complete English video prompts in the same order. "

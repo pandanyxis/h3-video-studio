@@ -23,7 +23,7 @@ class RenderError(RuntimeError):
 
 class NoRedirect(HTTPRedirectHandler):
     def redirect_request(self, req, fp, code, msg, headers, newurl):
-        raise RenderError("De renderdienst stuurde een onverwachte doorverwijzing.")
+        raise RenderError("The render service returned an unexpected redirect.")
 
 
 class RenderClient:
@@ -35,7 +35,7 @@ class RenderClient:
         parts = urlsplit(path)
         node_paths = {f"/object_info/{node}" for node, _ in MODEL_OPTIONS.values()}
         if parts.scheme or parts.netloc or (not path.startswith(PREFIX + "/") and path not in node_paths):
-            raise RenderError("Ongeldig bestandadres van de renderdienst.")
+            raise RenderError("The render service returned an invalid file URL.")
         return self.base_url + path
 
     def request(self, path, method="GET", body=None, key=None, headers=None):
@@ -54,9 +54,9 @@ class RenderClient:
                 detail = json.load(error).get("error", {}).get("message", str(error.code))
             except (ValueError, AttributeError):
                 detail = str(error.code)
-            raise RenderError(f"Renderdienst meldt: {detail}") from error
+            raise RenderError(f"Render service reported: {detail}") from error
         if not isinstance(result, dict):
-            raise RenderError("De renderdienst gaf een ongeldig antwoord.")
+            raise RenderError("The render service returned an invalid response.")
         return result
 
     def capabilities(self):
@@ -69,9 +69,9 @@ class RenderClient:
             try:
                 choices = schema[node]["input"]["required"][field][0]
             except (IndexError, KeyError, TypeError):
-                raise RenderError("ComfyUI geeft geen beschikbare modelkeuzes terug.") from None
+                raise RenderError("ComfyUI did not return available model options.") from None
             if not isinstance(choices, list) or any(not isinstance(choice, str) for choice in choices):
-                raise RenderError("ComfyUI geeft ongeldige modelkeuzes terug.")
+                raise RenderError("ComfyUI returned invalid model options.")
             options[key] = sorted(set(choices), key=str.casefold)
         return options
 
@@ -98,6 +98,9 @@ class RenderClient:
     def resume(self, job_id):
         return self.request(PREFIX + "/jobs/" + quote(job_id, safe="") + "/resume", "POST", {})
 
+    def cancel(self, job_id):
+        return self.request(PREFIX + "/jobs/" + quote(job_id, safe="") + "/cancel", "POST", {})
+
     def upload(self, path, kind="picture"):
         data = Path(path).read_bytes()
         checksum = hashlib.sha256(data).hexdigest()
@@ -114,26 +117,28 @@ class RenderClient:
             "Content-Type": f"multipart/form-data; boundary={boundary}",
         })
         if asset.get("sha256") != checksum:
-            raise RenderError("Het geüploade referentiebeeld komt niet overeen met het origineel.")
+            raise RenderError("The uploaded reference image does not match the original.")
         return asset
 
     def wait(self, job_id, on_update, deadline=4 * 3600):
         until = time.monotonic() + deadline
         while time.monotonic() < until:
             job = self.job(job_id)
-            on_update(job)
+            if on_update(job):
+                time.sleep(3)
+                continue
             if job.get("state") == "succeeded":
                 return job
             if job.get("state") in ("failed", "needs_reconciliation"):
-                message = (job.get("error") or {}).get("message", "Controleer de renderdienst.")
-                raise RenderError(f"Render onderbroken: {message}")
+                message = (job.get("error") or {}).get("message", "Check the render service.")
+                raise RenderError(f"Rendering interrupted: {message}")
             time.sleep(3)
-        raise RenderError("De wachttijd is verstreken. Hervat dit project om de render opnieuw op te vragen.")
+        raise RenderError("The render timed out. Resume this project to check it again.")
 
     def download(self, artifact, destination):
         size, checksum = artifact.get("size"), artifact.get("sha256")
         if type(size) is not int or size <= 0 or not isinstance(checksum, str) or not re.fullmatch(r"[a-f0-9]{64}", checksum):
-            raise RenderError("De renderdienst gaf ongeldige bestandsgegevens.")
+            raise RenderError("The render service returned invalid file metadata.")
         destination = Path(destination)
         if destination.is_file() and destination.stat().st_size == size:
             with destination.open("rb") as stream:
@@ -147,11 +152,11 @@ class RenderClient:
                 while chunk := response.read(1024 * 1024):
                     count += len(chunk)
                     if count > size:
-                        raise RenderError("Het videobestand is groter dan verwacht.")
+                        raise RenderError("The video file is larger than expected.")
                     hasher.update(chunk)
                     stream.write(chunk)
                 if count != size or hasher.hexdigest() != checksum:
-                    raise RenderError("Het videobestand is onvolledig of beschadigd.")
+                    raise RenderError("The video file is incomplete or damaged.")
                 stream.flush()
                 os.fsync(stream.fileno())
             temporary.replace(destination)

@@ -10,16 +10,14 @@ DEFAULT_IMAGE = 'ghcr.io/pandanyxis/h3-video-studio:latest'
 def make(image=DEFAULT_IMAGE):
     env = {
         'ENABLE_STUDIO': 'true', 'ENABLE_COMFYUI': 'true', 'ENABLE_QWEN': 'true',
-        'STUDIO_PASSWORD': '{{ RUNPOD_SECRET_STUDIO_PASSWORD }}',
-        'HF_TOKEN': '{{ RUNPOD_SECRET_HF_TOKEN }}',
-        'CIVITAI_TOKEN': '{{ RUNPOD_SECRET_CIVITAI_TOKEN }}',
+        'STUDIO_PASSWORD': 'ENTER_PASSWORD',
         'CTX_SIZE': '65536',
         'HF_EXTRA_MODELS': '[]',
         'STUDIO_RENDER_PROFILES': '[]',
         'HF_XET_HIGH_PERFORMANCE': '1', 'HF_XET_NUM_CONCURRENT_RANGE_GETS': '32',
         'REQUIRE_MINIMAX_DOWNLOADS': 'true',
-        'CIVITAI_CHECKPOINTS': '', 'CIVITAI_LORAS': '',
-        'CIVITAI_DIFFUSION_MODELS': '',
+        'CIVITAI_CHECKPOINTS': ',', 'CIVITAI_LORAS': ',',
+        'CIVITAI_DIFFUSION_MODELS': ',', 'CIVITAI_DOWNLOAD_WORKERS': '4',
     }
     settings = ROOT / 'runtime-settings.json'
     if settings.exists():
@@ -32,8 +30,8 @@ def make(image=DEFAULT_IMAGE):
     return {
         'name': 'H3 Video Studio',
         'imageName': image,
-        'containerDiskInGb': 50,
-        'volumeInGb': 120,
+        'containerDiskInGb': 150,
+        'volumeInGb': 0,
         'volumeMountPath': '/workspace',
         'ports': ['8190/http'],
         'env': env,
@@ -49,4 +47,4 @@ if __name__ == '__main__':
     path = ROOT / 'runpod-template.json'
     data = make(args.image)
     path.write_text(json.dumps(data, indent=2) + '\n', encoding='utf-8')
-    print('Prepared private Runpod template with a 120 GB workspace volume.')
+    print('Prepared private Runpod template with a 150 GB temporary container disk.')

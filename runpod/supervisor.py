@@ -61,7 +61,7 @@ def main():
                     return 1
             if studio and not announced and time.monotonic() >= next_probe:
                 if studio_ready():
-                    print("[studio] Klaar om te renderen: Studio, Qwen en ComfyUI zijn beschikbaar.", flush=True)
+                    print("[studio] Ready to render: Studio, Qwen, and ComfyUI are available.", flush=True)
                     announced = True
                 next_probe = time.monotonic() + 10
             time.sleep(1)

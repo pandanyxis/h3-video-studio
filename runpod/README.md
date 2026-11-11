@@ -1,29 +1,27 @@
-# GPU-runtime voor H3 Video Studio
+# Runpod GPU runtime
 
-Runpod levert één GPU voor Qwen en MiniMax H3. De eigen Studio-interface draait mee in de image. De projectservice stuurt het plannen, schrijven, renderen en exporteren aan.
+Runpod supplies one GPU for Qwen and MiniMax H3. The image also includes the Studio interface and the service that plans, writes, renders, and exports each project.
 
-## Image en opslag
+## Image and storage
 
-Bouw vanaf de repo-root met `runpod/Dockerfile` of gebruik de gepubliceerde image met de tag van een geslaagde GitHub-build.
+Build from the repository root with `runpod/Dockerfile` or deploy the published image using a successful GitHub build's commit tag.
 
 ```sh
 python runpod/make_template.py --image ghcr.io/pandanyxis/h3-video-studio:COMMIT_SHA
 ```
 
-Het script schrijft `runpod-template.json`, een payload voor de Runpod REST-template. Kies een RTX PRO 6000 Blackwell met 96 GB VRAM en een driver die CUDA 13 ondersteunt. De template gebruikt 50 GB containerschijf en 120 GB op `/workspace`. De standaardgewichten nemen samen ongeveer 70 GiB in. De rest biedt plaats aan de downloadcache en je projecten. Reserveer extra ruimte als je meer modellen toevoegt.
+The script writes `runpod-template.json` for the Runpod REST API. Use an RTX PRO 6000 Blackwell with 96 GB VRAM and a CUDA 13-compatible driver. The template uses a 150 GB container disk with no persistent volume. The standard weights use about 70 GiB. The remaining space holds extra models, downloads, and projects.
 
-De modelscripts verifiëren de bestanden op de Pod. Een volgende start op hetzelfde volume kan de bestanden hergebruiken. Wil je projecten meenemen naar een nieuwe Pod, gebruik dan een gekoppeld netwerkvolume of exporteer de projectmap.
+Model downloads are verified on the pod. With temporary storage, Runpod erases models, projects, and films when the pod stops. Download any work you want to keep first. If you choose to attach a persistent volume at `/workspace`, a later start can reuse the verified files.
 
-## Toegang
+## Access
 
-De template publiceert alleen de Studio-interface op poort `8190/http`. Maak een Runpod Secret `STUDIO_PASSWORD` met minstens 16 tekens. De template verwijst naar dat Secret. Open in Runpod **Connect → HTTP Service (8190)** en log in met gebruikersnaam `studio` en dat wachtwoord. Elke nieuwe Pod krijgt een eigen HTTPS-adres. Zonder wachtwoordconfiguratie geeft Studio geen toegang tot projecten.
+The Studio interface uses port `8190/http`. Set `STUDIO_PASSWORD` to at least 16 characters, either in the pod environment or through a Runpod Secret. Open **Connect → HTTP Service (8190)** and sign in as `studio`. Each new pod has a different HTTPS address.
 
-Qwen en ComfyUI luisteren binnen de Pod. Bij de eerste start downloaden en verifiëren ze de gewichten. De logregels `[qwen]` en `[comfy]` laten de voortgang zien.
+Qwen and ComfyUI listen inside the pod. The `[qwen]` and `[comfy]` logs show download and verification progress. Under **Pods → your pod → Logs**, look for `[studio] Ready to render`. That message confirms Studio, Qwen, and the default render profile are available.
 
-Controleer bij het uitrollen in de Runpod-console dat er een volume op `/workspace` is gekoppeld. Gebruik minstens 120 GB voor de standaardmodellen en reserveer extra ruimte voor eigen modellen. Bij **Pods → jouw pod → Logs** verschijnt `[studio] Klaar om te renderen` zodra Studio, Qwen en het standaardrenderprofiel beschikbaar zijn.
+The runtime generates a local Qwen key and stores it privately under `/workspace`. Set `LLAMA_API_KEY` if you need a fixed key. Some optional downloads require `HF_TOKEN` or `CIVITAI_TOKEN`. Keep personal settings in an untracked `runtime-settings.json`. See [model configuration](RUNPOD-MODELS.md).
 
-De runtime genereert standaard een Qwen-sleutel en bewaart die privé op `/workspace`. Voor een vaste sleutel kun je `LLAMA_API_KEY` via Runpod Secrets instellen. Gebruik eventueel `HF_TOKEN` of `CIVITAI_TOKEN` voor aanvullende downloads. Houd `runtime-settings.json` met lokale instellingen buiten Git. Zie [de modelconfiguratie](RUNPOD-MODELS.md) voor opties.
+## GPU smoke test
 
-## GPU-proef
-
-Open Studio, geef een kort verhaal met één referentiebeeld en start een film. Controleer of het project per gepland shot één prompt en één losse clip bevat en of de MP4 afspeelt. Controleer ook of de clips binnen tien seconden blijven. Stop een testpod na afloop om GPU-kosten te beperken.
+Open Studio and render a short story with one reference image. Check that each planned shot has a prompt and a clip, each clip stays within ten seconds, and the exported MP4 plays. Stop the test pod when finished.

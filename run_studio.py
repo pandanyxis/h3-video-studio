@@ -9,14 +9,16 @@ from pathlib import Path
 from export_project import export_project
 from prepare_timeline import ASPECT_SIZES, timeline_document
 from studio_render import RenderClient, RenderError
-from studio_storage import atomic_json, gpu_lock, progress, read_json
+from studio_storage import ProductionCancelled, atomic_json, check_cancelled, gpu_lock, progress, read_json
 from studio_writer import DEFAULT_WRITER_PROMPT, plan_and_write, qwen_ready, revise_shot
 
 
-def wait_for_models(client, project, profile_id, *, needs_qwen):
+def wait_for_models(client, project, profile_id, *, needs_qwen, can_cancel=True):
     progress(project, "preparing")
     until = time.monotonic() + 90 * 60
     while True:
+        if can_cancel:
+            check_cancelled(project)
         try:
             profiles = client.capabilities()["profiles"]
             profile = next((item for item in profiles if item["id"] == profile_id), {})
@@ -25,7 +27,7 @@ def wait_for_models(client, project, profile_id, *, needs_qwen):
         except (OSError, ValueError, RenderError):
             pass
         if time.monotonic() >= until:
-            raise RuntimeError("De videomodellen zijn nog niet beschikbaar. Controleer de GPU-host en hervat het project.")
+            raise RuntimeError("The video models are not available yet. Check the GPU host and resume the project.")
         time.sleep(5)
 
 
@@ -51,7 +53,7 @@ def prepare_render(client, state, receipt):
         if current["revision"] == expected:
             current = client.update_project(state["project_id"], document, expected)
         elif current["revision"] != expected + 1 or current["timeline"] != document["timeline"]:
-            raise RenderError("De renderdienst heeft inmiddels een andere revisie verwerkt.")
+            raise RenderError("The render service has processed a different revision.")
     else:
         current = client.create(document, state["key"])
         state["project_id"] = current["id"]
@@ -75,14 +77,18 @@ def produce(args):
     plan_file = project / "shots.json"
     revision_file = project / "revision.json"
     is_revision = revision_file.is_file()
+    state = read_json(receipt) if receipt.exists() else {}
+    submitted = "job_id" in state or state.get("submitting", False)
     wait_for_models(client, project, args.profile,
-                    needs_qwen=not receipt.exists() and (is_revision or not plan_file.exists()))
+                    needs_qwen=not state and (is_revision or not plan_file.exists()), can_cancel=not submitted)
     if receipt.exists():
-        state = read_json(receipt)
+        if not submitted:
+            check_cancelled(project)
     else:
+        check_cancelled(project)
         story = args.story.read_text(encoding="utf-8-sig").strip()
         if not story:
-            raise ValueError("Voer een verhaal of shotidee in.")
+            raise ValueError("Enter a story or shot idea.")
         pictures = [(f"image{index}", path) for index, path in enumerate(args.references, 17)]
         instructions = project / "writer-prompt.txt"
         writer_prompt = instructions.read_text(encoding="utf-8") if instructions.is_file() else DEFAULT_WRITER_PROMPT
@@ -94,11 +100,13 @@ def produce(args):
             else:
                 plan = plan_and_write(story, pictures, project, writer_prompt=writer_prompt)
                 atomic_json(plan_file, plan)
+            check_cancelled(project)
             body = timeline_document(plan, project.name, args.profile, getattr(args, "aspect", None))
             for box, shot in zip(body["timeline"]["boxes"], plan["shots"]):
                 box["prompt"] = shot["prompt"]
             progress(project, "references")
             for slot, path in pictures:
+                check_cancelled(project)
                 asset = client.upload(path)
                 body["assets"].append({"asset_id": asset["id"], "bindings": [
                     {"kind": "picture", "slot": slot, "title": path.stem},
@@ -111,16 +119,31 @@ def produce(args):
     if "job_id" not in state:
         if "render" not in state:
             prepare_render(client, state, receipt)
-        # The local Qwen server releases its GPU allocation after ten idle seconds.
-        time.sleep(12)
+        if not submitted:
+            # The local Qwen server releases its GPU allocation after ten idle seconds.
+            time.sleep(12)
+            check_cancelled(project)
+            state["submitting"] = True
+            atomic_json(receipt, state)
         job = client.render(state["project_id"], state["render"], state["key"])
         state["job_id"] = job["id"]
         atomic_json(receipt, state)
-    elif getattr(args, "resume", False):
+    elif getattr(args, "resume", False) and not (project / "cancel.request").is_file():
         if client.job(state["job_id"]).get("state") in ("failed", "needs_reconciliation"):
             client.resume(state["job_id"])
 
+    cancel_sent = False
+
     def update(job):
+        nonlocal cancel_sent
+        if (project / "cancel.request").is_file():
+            if job.get("state") in ("succeeded", "failed"):
+                raise ProductionCancelled()
+            if not cancel_sent:
+                client.cancel(state["job_id"])
+                cancel_sent = True
+            progress(project, "cancelling")
+            return True
         if job.get("state") in ("queued", "running"):
             for attempt in job.get("attempts", []):
                 unit = attempt["unit_id"]
@@ -135,7 +158,7 @@ def produce(args):
                 try:
                     client.download(artifact, target)
                 except (OSError, RenderError) as error:
-                    print(f"Preview voor {box} tijdelijk niet beschikbaar: {error}", flush=True)
+                    print(f"Preview for {box} is temporarily unavailable: {error}", flush=True)
         current = (job.get("progress") or {}).get("current") or ""
         match = re.fullmatch(r"box:shot-(\d{2})", current)
         finished = len(list(clips.glob("shot-*.mp4")))
@@ -143,11 +166,14 @@ def produce(args):
                  current_shot=int(match[1]) if match else None)
 
     job = client.wait(state["job_id"], on_update=update)
+    check_cancelled(project)
     artifacts = {item["unit_id"]: item for item in job["artifacts"] if item["kind"] == "box"}
     progress(project, "exporting")
     for index in range(1, len(state["plan"]["shots"]) + 1):
+        check_cancelled(project)
         shot = f"shot-{index:02d}"
         client.download(artifacts[f"box:{shot}"], clips / f"{shot}.mp4")
+    check_cancelled(project)
     export_project(project, film)
     progress(project, "done")
     return film
@@ -170,6 +196,8 @@ def main():
     with gpu_lock():
         try:
             print(produce(args))
+        except ProductionCancelled:
+            progress(args.project, "cancelled")
         except Exception as error:
             progress(args.project, "failed", error=str(error))
             raise

@@ -1,31 +1,32 @@
-# Runpod-modelprofiel
+# Runpod model configuration
 
-De standaardbuild gebruikt MiniMax H3 FL2VA Pruned INT8 van Comfy-Org, plus de bestaande tekstencoder, audio- en video-VAE, Turbo-LoRA en preview. Qwen genereert de shotprompts voor Studio. Eros, Mystic en de privémirror worden niet automatisch opgehaald. Dat scheelt circa 22 GB aan downloads.
+The default build uses Comfy-Org's MiniMax H3 FL2VA Pruned INT8 model with the existing text encoder, audio and video VAEs, Turbo LoRA, and preview model. Local Qwen writes the shot prompts. Eros, Mystic, and the private mirror are optional downloads.
 
-De standaard T2V- en I2V-workflows wijzen naar het Comfy-Org-model. Bestaande persoonlijke workflows worden niet overschreven. Pas op een bestaand volume zo nodig de UNET-loader aan.
+The bundled T2V and I2V workflows use the Comfy-Org model by default. Existing personal workflows are preserved. On an existing volume, update the UNET loader if it points to a different model.
 
-## Extra modellen bij opstart
+## Select a render profile
 
-Kies in Studio per project een renderprofiel en een beeldverhouding. Automatisch gebruikt de oriëntatie van je eerste referentiebeeld. Je kunt ook 16:9 (1024 × 576) of 9:16 (576 × 1024) kiezen.
+Choose a render profile and aspect ratio per project. **Automatic** follows the first reference image. The explicit sizes are 1024 × 576 for 16:9 and 576 × 1024 for 9:16.
 
-Kies in Studio onder **Renderprofiel** voor **Eigen renderinstellingen**. Kies een geïnstalleerd MiniMax H3-model, een bijbehorende LoRA, het aantal samplingstappen en de LoRA-sterkte. Download extra bestanden via de velden hieronder.
+Choose **Render profile → Custom render settings** to select an installed MiniMax H3 model, a compatible LoRA, the sampling steps, and the LoRA strength.
 
-Voor vooraf ingestelde profielen kun je in Runpod optioneel `STUDIO_RENDER_PROFILES` invullen. Gebruik de exacte bestandsnamen zoals ComfyUI ze ziet.
+For presets, optionally provide a JSON array in `STUDIO_RENDER_PROFILES`. Use the exact filenames listed in ComfyUI.
 
 ```json
-[{"id":"eigen-h3","title":"Eigen H3","model":"mijn-h3.safetensors","lora":"mijn-lora.safetensors","steps":8,"lora_strength":0.8}]
+[{"id":"custom-h3","title":"Custom H3","model":"my-h3.safetensors","lora":"my-lora.safetensors","steps":8,"lora_strength":0.8}]
 ```
 
-Stel HF_TOKEN en CIVITAI_TOKEN in via Runpod Secrets. Selecteer de downloads met:
+## Download extra models
 
-- CIVITAI_CHECKPOINTS, CIVITAI_LORAS en CIVITAI_DIFFUSION_MODELS. Gebruik kommagescheiden identifiers zoals model:123 of version:456.
-- HF_EXTRA_MODELS. Geef een JSON-lijst op, bijvoorbeeld [{"repo":"eigenaar/repo","revision":"COMMIT_SHA","file":"pad/extra.safetensors","folder":"loras"}].
+Set `HF_TOKEN` or `CIVITAI_TOKEN` when the provider requires access. You can use Runpod Secrets for these values.
 
-Gebruik unieke bestandsnamen. Een bestaand bestand op de bestemming wordt hergebruikt. Reserveer ruimte voor de HF-downloadcache.
+- Use `CIVITAI_CHECKPOINTS`, `CIVITAI_LORAS`, and `CIVITAI_DIFFUSION_MODELS` for comma-separated identifiers such as `model:123` or `version:456`.
+- Use `HF_EXTRA_MODELS` for a JSON array such as `[{"repo":"owner/repo","revision":"COMMIT_SHA","file":"path/extra.safetensors","folder":"loras"}]`.
 
-Civitai-bestanden vanaf 1 GiB gebruiken standaard vier verbindingen als de downloadserver bytebereiken ondersteunt. Met `CIVITAI_DOWNLOAD_WORKERS` kies je 1 tot 8 verbindingen. Kies 1 voor een enkele verbinding. De downloader controleert altijd de SHA-256 van het volledige bestand.
+Use unique filenames. Studio reuses an existing verified file and needs space for the Hugging Face download cache.
 
-## Validatie uitsluitend op Runpod
+Civitai files of at least 1 GiB use four connections by default when the download server supports byte ranges. Set `CIVITAI_DOWNLOAD_WORKERS` to a value from 1 to 8. The downloader verifies the SHA-256 of the complete file.
 
-Bouw op Runpod met de repo-root als buildcontext en runpod/Dockerfile als Dockerfile. Geef de eigen image expliciet mee aan make_template.py via --image. Start op een RTX PRO 6000 Blackwell 96 GB met lege modelopslag. Controleer de standaarddownloads, render een korte T2V- en I2V-clip en meet piek-VRAM. Test daarna een Civitai-extra en een HF-extra, inclusief hergebruik bij een tweede start.
+## Validate on Runpod
 
+Build from the repository root using `runpod/Dockerfile` and pass the resulting image to `make_template.py --image`. Start on an RTX PRO 6000 Blackwell with 96 GB VRAM and empty model storage. Check the default downloads, render short T2V and I2V clips, and measure peak VRAM. Then test one Civitai extra and one Hugging Face extra. If you use a persistent volume, verify that a second start reuses the files.

@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="nl">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -99,101 +99,106 @@ summary { cursor:pointer; font-size:13px; font-weight:550; }
 </head>
 <body>
 <div class="shell">
-<aside aria-label="Projecten">
+<aside aria-label="Projects">
   <div class="brand"><span class="mark" aria-hidden="true">H3</span> Video Studio</div>
-  <button id="new-project" class="secondary" type="button">＋ Nieuw project</button>
-  <div class="eyebrow sidebar-label">Jouw projecten</div>
-  <nav id="projects" aria-label="Opgeslagen projecten"><p class="empty">Je projecten verschijnen hier.</p></nav>
+  <button id="new-project" class="secondary" type="button">＋ New project</button>
+  <div class="eyebrow sidebar-label">Your projects</div>
+  <nav id="projects" aria-label="Saved projects"><p class="empty">Your projects will appear here.</p></nav>
+  <div class="actions">
+    <button id="cancel-all" class="secondary" type="button" hidden>Stop all productions</button>
+    <button id="clear-projects" class="secondary" type="button" hidden>Clear projects</button>
+  </div>
 </aside>
 <main>
-  <div class="topbar"><span class="eyebrow">Van idee naar film</span><span class="badge"><span class="dot" aria-hidden="true"></span> Eigen Studio · MiniMax H3</span></div>
-  <div class="eyebrow" id="page-label">Nieuw project</div>
-  <h1 id="heading">Welk verhaal wil je maken?</h1>
-  <p class="intro" id="intro">Een kort shotidee of verhaal is genoeg. Voeg je beelden toe. Studio plant de shots, schrijft de prompts en maakt er een film van.</p>
+  <div class="topbar"><span class="eyebrow">From idea to film</span><span class="badge"><span class="dot" aria-hidden="true"></span> Studio · MiniMax H3</span></div>
+  <div class="eyebrow" id="page-label">New project</div>
+  <h1 id="heading">What story do you want to tell?</h1>
+  <p class="intro" id="intro">Add a shot idea or story and your reference images. Studio plans the shots, writes the prompts, and makes the film.</p>
   <div id="notice" role="status" aria-live="polite"></div>
   <div class="layout">
     <div>
-      <section class="panel" id="input-panel" aria-label="Nieuw videoproject">
+      <section class="panel" id="input-panel" aria-label="New video project">
         <form id="create-form">
-          <label for="story">Shotidee of verhaal</label>
-          <textarea id="story" required maxlength="20000" placeholder="Bijvoorbeeld: een vrouw opent haar café aan zee. Ze zet koffie, ontdekt een brief en kijkt naar buiten…"></textarea>
+          <label for="story">Shot idea or story</label>
+          <textarea id="story" required maxlength="20000" placeholder="For example, a woman opens her seaside café. She brews coffee, discovers a letter, and looks outside…"></textarea>
           <details class="writer-settings" id="writer-settings">
-            <summary>Prompt Writer-instellingen</summary>
-            <label for="writer-prompt">Schrijfinstructies voor dit project</label>
+            <summary>Prompt Writer settings</summary>
+            <label for="writer-prompt">Writing instructions for this project</label>
             <textarea id="writer-prompt" aria-describedby="writer-help"></textarea>
-            <span id="writer-help" class="hint">Leeg laten gebruikt de standaardinstructies.</span>
-            <button id="reset-writer" type="button" class="secondary">Standaardtekst laden</button>
+            <span id="writer-help" class="hint">Leave blank to use the default instructions.</span>
+            <button id="reset-writer" type="button" class="secondary">Restore default instructions</button>
           </details>
-          <label for="images">Referentiebeelden</label>
-          <span class="hint" id="limits">Personages, locaties of voorwerpen. 1–9 beelden van maximaal 8 MiB per beeld.</span>
+          <label for="images">Reference images</label>
+          <span class="hint" id="limits">Characters, locations, or objects. Add 1–9 images, up to 8 MiB each.</span>
           <input id="images" type="file" multiple required accept="image/png,image/jpeg,image/webp" aria-describedby="limits">
           <div class="thumbnails" id="previews"></div>
-          <label for="profile">Renderprofiel</label>
+          <label for="profile">Render profile</label>
           <select id="profile">
             <option value="studio-turbo8">Studio H3 Turbo 8-step</option>
-            <option value="own-settings">Eigen renderinstellingen</option>
+            <option value="own-settings">Custom render settings</option>
           </select>
           <fieldset class="render-settings" id="render-settings" hidden disabled>
-            <legend>Eigen renderinstellingen</legend>
-            <label for="render-model">MiniMax H3-model</label>
+            <legend>Custom render settings</legend>
+            <label for="render-model">MiniMax H3 model</label>
             <select id="render-model" required></select>
             <label for="render-lora">LoRA</label>
             <select id="render-lora" required></select>
             <div class="sampling">
-              <label>Samplingstappen <input id="render-steps" type="number" min="1" max="100" step="1" value="8" required></label>
-              <label>LoRA-sterkte <input id="render-strength" type="number" min="0" max="2" step="any" value="0.8" required></label>
+              <label>Sampling steps <input id="render-steps" type="number" min="1" max="100" step="1" value="8" required></label>
+              <label>LoRA strength <input id="render-strength" type="number" min="0" max="2" step="any" value="0.8" required></label>
             </div>
           </fieldset>
           <div id="render-feedback" hidden>
             <p id="render-options-status" class="hint" role="status"></p>
-            <button id="reload-models" type="button" class="secondary">Modellen opnieuw laden</button>
+            <button id="reload-models" type="button" class="secondary">Reload models</button>
           </div>
-          <label for="aspect">Beeldverhouding</label>
+          <label for="aspect">Aspect ratio</label>
           <select id="aspect">
-            <option value="auto">Automatisch op basis van het eerste beeld</option>
-            <option value="16:9">16:9 · Liggend</option>
-            <option value="9:16">9:16 · Staand</option>
+            <option value="auto">Automatic based on the first reference image</option>
+            <option value="16:9">16:9 · Landscape</option>
+            <option value="9:16">9:16 · Portrait</option>
           </select>
-          <span class="hint">Je verhaal bepaalt het aantal shots. Elke clip duurt maximaal 10 seconden.</span>
-          <button id="submit" class="primary">Maak mijn film <span aria-hidden="true">↗</span></button>
+          <span class="hint">Studio plans the shot count from your story. Each clip lasts up to 10 seconds.</span>
+          <button id="submit" class="primary">Make my film <span aria-hidden="true">↗</span></button>
         </form>
       </section>
-      <section class="panel" id="project-panel" hidden aria-label="Videoproject">
+      <section class="panel" id="project-panel" hidden aria-label="Video project">
         <div class="project-progress" role="status" aria-live="polite">
           <strong id="project-step"></strong>
           <p id="project-status"></p>
         </div>
-        <h2>Jouw verhaal</h2>
+        <h2>Your story</h2>
         <p class="project-story" id="saved-story"></p>
         <div class="thumbnails" id="saved-images"></div>
-        <p id="previous-film" hidden><a id="previous-film-link">Vorige filmversie bekijken</a></p>
+        <p id="previous-film" hidden><a id="previous-film-link">View previous film version</a></p>
         <div id="render-preview" hidden>
-          <h2 id="render-preview-title">Laatste gerenderde clip</h2>
+          <h2 id="render-preview-title">Latest rendered clip</h2>
           <video class="shot-video" id="render-preview-video" controls playsinline preload="auto" aria-labelledby="render-preview-title"></video>
         </div>
         <div id="project-output" hidden>
-          <h2>Je film is klaar</h2>
-          <video id="film" controls preload="metadata" aria-label="Voltooide film"></video>
+          <h2>Your film is ready</h2>
+          <video id="film" controls preload="metadata" aria-label="Finished film"></video>
           <a class="download" id="download" download="film.mp4">Download MP4</a>
         </div>
         <div class="actions">
-          <button id="resume" class="secondary" type="button" hidden>Hervat verwerking</button>
-          <a id="log" target="_blank" rel="noopener" hidden>Productielog openen</a>
+          <button id="resume" class="secondary" type="button" hidden>Resume production</button>
+          <button id="cancel-project" class="secondary" type="button" hidden>Stop production</button>
+          <a id="log" target="_blank" rel="noopener" hidden>Open production log</a>
         </div>
       </section>
       <section id="shots-section" hidden>
-        <h2>Clips beoordelen</h2>
+        <h2>Review clips</h2>
         <div id="shots"></div>
       </section>
     </div>
-    <section class="panel workflow" aria-label="Productiestappen">
-      <h2>Zo maakt Studio je film</h2>
+    <section class="panel workflow" aria-label="Production steps">
+      <h2>How Studio makes your film</h2>
       <ol class="steps">
-        <li data-stage="input"><span class="step-number">1</span><div><strong>Jouw idee &amp; beelden</strong><small>Het begin van je verhaal</small></div></li>
-        <li data-stage="planning"><span class="step-number">2</span><div><strong>Story &amp; Shot Planner</strong><small>Aantal en lengte volgen je verhaal</small></div></li>
-        <li data-stage="writing"><span class="step-number">3</span><div><strong>Studio Writer</strong><small>Beweging, camera en geluid</small></div></li>
-        <li data-stage="rendering"><span class="step-number">4</span><div><strong>Video genereren</strong><small>Continuïteit tussen de shots</small></div></li>
-        <li data-stage="exporting"><span class="step-number">5</span><div><strong>Complete MP4</strong><small>Jouw film en losse clips</small></div></li>
+        <li data-stage="input"><span class="step-number">1</span><div><strong>Your idea &amp; references</strong><small>Story and reference images</small></div></li>
+        <li data-stage="planning"><span class="step-number">2</span><div><strong>Story &amp; Shot Planner</strong><small>Shot count and duration</small></div></li>
+        <li data-stage="writing"><span class="step-number">3</span><div><strong>Studio Writer</strong><small>Movement, camera, and sound</small></div></li>
+        <li data-stage="rendering"><span class="step-number">4</span><div><strong>Render clips</strong><small>Continuity across shots</small></div></li>
+        <li data-stage="exporting"><span class="step-number">5</span><div><strong>Export MP4</strong><small>Your film and individual clips</small></div></li>
       </ol>
     </section>
   </div>
@@ -201,21 +206,24 @@ summary { cursor:pointer; font-size:13px; font-weight:550; }
 </div>
 <script>
 const $ = selector => document.querySelector(selector);
-const state = { id:null, generation:0, timer:null, previewUrls:[], shotSignature:null, referenceId:null };
+const state = { id:null, generation:0, timer:null, sidebarTimer:null, previewUrls:[], shotSignature:null, referenceId:null };
 const stages = ['input','planning','writing','rendering','exporting'];
-const stepNames = ['Jouw idee & beelden','Story & Shot Planner','Studio Writer','Video genereren','Complete MP4'];
+const stepNames = ['Your idea & references','Story & Shot Planner','Studio Writer','Render clips','Export MP4'];
 const labels = {
-  queued:'Je project staat in de wachtrij.', preparing:'Studio wacht op de GPU en de modellen. Bij de eerste start kan dit even duren.',
-  planning:'Qwen analyseert je idee en referentiebeelden en bepaalt het aantal shots en hun lengte.', writing:'Studio Writer schrijft de volledige H3-prompt voor elk shot.',
-  references:'Studio koppelt je referentiebeelden aan de shots.', rendering:'Studio genereert je videoclips.',
-  exporting:'Studio haalt de clips op en voegt ze samen.', done:'Je film is klaar.', failed:'De productie is onderbroken.'
+  queued:'Your project is queued.', preparing:'Studio is waiting for the GPU and models. The first startup can take a while.',
+  planning:'Qwen analyzes your idea and reference images to plan the shot count and duration.', writing:'Studio Writer is writing the H3 prompt for each shot.',
+  references:'Studio is attaching reference images to the shots.', rendering:'Studio is rendering your clips.',
+  exporting:'Studio is downloading and assembling the clips.', done:'Your film is ready.', failed:'Production was interrupted.'
 };
-const statusLabels = {queued:'In de wachtrij',running:'In productie',done:'Voltooid',failed:'Onderbroken'};
+const statusLabels = {queued:'Queued',running:'In production',done:'Complete',failed:'Interrupted'};
+statusLabels.cancelled = 'Cancelled';
+labels.cancelling = 'Stopping production. Studio is waiting for the current operation to stop.';
+labels.cancelled = 'Production stopped. Completed clips remain available.';
 
 async function api(path, options) {
   const response = await fetch(path, {cache:'no-store', ...options});
   const result = await response.json();
-  if (!response.ok) throw new Error(result.error || 'Studio kon de aanvraag niet verwerken.');
+  if (!response.ok) throw new Error(result.error || 'Studio could not complete the request.');
   return result;
 }
 function post(path, body={}) {
@@ -245,14 +253,20 @@ function pipeline(stage) {
   });
 }
 async function listProjects() {
+  clearTimeout(state.sidebarTimer);
   try {
     const result = await api('/projects');
     const nav = $('#projects');
+    const active = result.projects.some(project => ['queued','running'].includes(project.status));
+    if (active) state.sidebarTimer = setTimeout(listProjects,5000);
+    $('#cancel-all').hidden = !active;
+    $('#clear-projects').hidden = !result.projects.length;
+    $('#clear-projects').disabled = active;
     nav.replaceChildren();
     if (!result.projects.length) {
       const empty = document.createElement('p');
       empty.className = 'empty';
-      empty.textContent = 'Je projecten verschijnen hier.';
+      empty.textContent = 'Your projects will appear here.';
       nav.append(empty);
     }
     result.projects.forEach(project => {
@@ -261,35 +275,37 @@ async function listProjects() {
       link.href = '#' + project.id;
       if (project.id === state.id) link.setAttribute('aria-current','page');
       const title = document.createElement('strong');
-      title.textContent = project.title || 'Videoproject';
+      title.textContent = project.title || 'Video project';
       const status = document.createElement('small');
-      status.textContent = statusLabels[project.status] || project.status;
+      status.textContent = project.progress.stage === 'cancelling' ? 'Stopping' : statusLabels[project.status] || project.status;
       link.append(title,status);
       nav.append(link);
     });
   } catch (error) { $('#notice').textContent = error.message; }
 }
 function showProject(project) {
-  $('#heading').textContent = project.title || 'Jouw videoproject';
+  $('#heading').textContent = project.title || 'Your video project';
   $('#saved-story').textContent = project.story;
   const base = '/projects/' + project.id;
   const stage = project.status === 'done' ? 'done' : project.progress.stage;
   const count = project.progress.completed || 0;
   const total = project.progress.total || project.shots.length;
   const index = stepIndex(stage);
-  const step = index >= 0 ? 'Stap ' + (index+1) + ' van ' + stages.length + ' · ' + stepNames[index]
-    : stage === 'preparing' ? 'GPU en modellen controleren' : statusLabels[project.status];
+  const step = index >= 0 ? 'Step ' + (index+1) + ' of ' + stages.length + ' · ' + stepNames[index]
+    : stage === 'preparing' ? 'Checking GPU and models' : statusLabels[project.status];
   if ($('#project-step').textContent !== step) $('#project-step').textContent = step;
   let description = labels[stage] || statusLabels[project.status];
-  if (stage === 'rendering' && total) description += ' ' + count + ' van ' + total + ' clips beschikbaar.';
+  if (stage === 'rendering' && total) description += ' ' + count + ' of ' + total + ' clips available.';
   if (stage === 'rendering' && project.progress.current_shot) {
-    description += ' Bezig met shot ' + project.progress.current_shot + '.';
+    description += ' Rendering shot ' + project.progress.current_shot + '.';
   }
-  if (stage === 'writing' && total) description += ' ' + total + (total === 1 ? ' shot gepland.' : ' shots gepland.');
+  if (stage === 'writing' && total) description += ' ' + total + (total === 1 ? ' shot planned.' : ' shots planned.');
   if ($('#project-status').textContent !== description) $('#project-status').textContent = description;
   $('#notice').textContent = project.status === 'failed' ? (project.progress.error || labels.failed) : '';
   $('#resume').hidden = project.status !== 'failed';
-  $('#log').hidden = project.status !== 'failed';
+  $('#cancel-project').hidden = !['queued','running'].includes(project.status);
+  $('#cancel-project').disabled = stage === 'cancelling';
+  $('#log').hidden = !['failed','cancelled'].includes(project.status);
   $('#log').href = base + '/render.log';
   $('#previous-film').hidden = !project.parent;
   $('#previous-film-link').href = project.parent ? '#' + project.parent : '#';
@@ -298,7 +314,7 @@ function showProject(project) {
   if (preview) {
     const url = base + '/clips/' + preview;
     if ($('#render-preview-video').getAttribute('src') !== url) $('#render-preview-video').src = url;
-    $('#render-preview-title').textContent = 'Laatste gerenderde clip · Shot ' + Number(preview.slice(5,7));
+    $('#render-preview-title').textContent = 'Latest rendered clip · Shot ' + Number(preview.slice(5,7));
   } else if ($('#render-preview-video').hasAttribute('src')) {
     $('#render-preview-video').removeAttribute('src');
     $('#render-preview-video').load();
@@ -310,7 +326,7 @@ function showProject(project) {
   }
   pipeline(stage);
   if (state.referenceId !== project.id) {
-    $('#saved-images').replaceChildren(...project.references.map((name,i) => thumbnail(base + '/' + name,'Referentie ' + (i+1))));
+    $('#saved-images').replaceChildren(...project.references.map((name,i) => thumbnail(base + '/' + name,'Reference ' + (i+1))));
     state.referenceId = project.id;
   }
   const signature = JSON.stringify([project.id,project.shots,project.clips,project.can_revise]);
@@ -322,7 +338,7 @@ function showProject(project) {
     const detail = document.createElement('details');
     const summary = document.createElement('summary');
     const length = Number.isFinite(shot.duration_seconds)
-      ? ' · ' + new Intl.NumberFormat('nl-NL',{maximumFractionDigits:1}).format(shot.duration_seconds) + ' s' : '';
+      ? ' · ' + new Intl.NumberFormat('en-US',{maximumFractionDigits:1}).format(shot.duration_seconds) + ' s' : '';
     summary.textContent = 'Shot ' + (i+1) + length + ' · ' + shot.action;
     const description = document.createElement('p');
     description.className = 'shot-action';
@@ -339,7 +355,7 @@ function showProject(project) {
       video.playsInline = true;
       video.preload = 'metadata';
       video.src = base + '/clips/' + filename;
-      video.setAttribute('aria-label','Bekijk shot ' + (i+1));
+      video.setAttribute('aria-label','Play shot ' + (i+1));
       const clip = document.createElement('a');
       clip.className = 'clip';
       clip.href = base + '/clips/' + filename;
@@ -350,16 +366,16 @@ function showProject(project) {
         const form = document.createElement('form');
         form.className = 'shot-review';
         const label = document.createElement('label');
-        label.textContent = 'Wat moet beter aan shot ' + (i+1) + '?';
+        label.textContent = 'What should change in shot ' + (i+1) + '?';
         const feedback = document.createElement('textarea');
         feedback.id = 'shot-feedback-' + i;
         label.htmlFor = feedback.id;
         feedback.required = true;
         feedback.maxLength = 4000;
-        feedback.placeholder = 'Bijvoorbeeld: laat beide personen eerst stilstaan en daarna één hand uitsteken.';
+        feedback.placeholder = 'For example, have both people pause before one extends a hand.';
         const button = document.createElement('button');
         button.className = 'secondary';
-        button.textContent = 'Verbeter shot en maak nieuwe filmversie';
+        button.textContent = 'Revise shot and create a new film version';
         form.append(label,feedback,button);
         form.addEventListener('submit',async event => {
           event.preventDefault();
@@ -383,10 +399,10 @@ async function poll(id, generation) {
     showProject(project);
     await listProjects();
     if (generation !== state.generation) return;
-    if (!['done','failed'].includes(project.status)) state.timer = setTimeout(() => poll(id,generation),3000);
+    if (!['done','failed','cancelled'].includes(project.status)) state.timer = setTimeout(() => poll(id,generation),3000);
   } catch (error) {
     if (generation !== state.generation) return;
-    $('#notice').textContent = error.message + ' Studio probeert opnieuw verbinding te maken.';
+    $('#notice').textContent = error.message + ' Studio is trying to reconnect.';
     state.timer = setTimeout(() => poll(id,generation),5000);
   }
 }
@@ -400,7 +416,7 @@ function navigate() {
   $('#film').load();
   $('#input-panel').hidden = Boolean(state.id);
   $('#project-panel').hidden = !state.id;
-  $('#project-step').textContent = 'Projectstatus ophalen…';
+  $('#project-step').textContent = 'Loading project status…';
   $('#project-status').textContent = '';
   $('#intro').hidden = Boolean(state.id);
   $('#shots-section').hidden = true;
@@ -408,9 +424,10 @@ function navigate() {
   $('#render-preview').hidden = true;
   $('#previous-film').hidden = true;
   $('#resume').hidden = true;
+  $('#cancel-project').hidden = true;
   $('#log').hidden = true;
-  $('#page-label').textContent = state.id ? 'Jouw project' : 'Nieuw project';
-  $('#heading').textContent = state.id ? 'Project openen…' : 'Welk verhaal wil je maken?';
+  $('#page-label').textContent = state.id ? 'Your project' : 'New project';
+  $('#heading').textContent = state.id ? 'Opening project…' : 'What story do you want to tell?';
   state.referenceId = null;
   state.shotSignature = null;
   pipeline('input');
@@ -421,14 +438,14 @@ function encode(file) {
   return new Promise((resolve,reject) => {
     const reader = new FileReader();
     reader.onload = () => resolve(reader.result.split(',')[1]);
-    reader.onerror = () => reject(new Error('Een referentiebeeld kon niet worden gelezen.'));
+    reader.onerror = () => reject(new Error('A reference image could not be read.'));
     reader.readAsDataURL(file);
   });
 }
 $('#images').addEventListener('change', () => {
   state.previewUrls.forEach(url => URL.revokeObjectURL(url));
   state.previewUrls = [...$('#images').files].map(file => URL.createObjectURL(file));
-  $('#previews').replaceChildren(...state.previewUrls.map((url,i) => thumbnail(url,'Referentie ' + (i+1))));
+  $('#previews').replaceChildren(...state.previewUrls.map((url,i) => thumbnail(url,'Reference ' + (i+1))));
 });
 async function loadRenderOptions() {
   const fieldset = $('#render-settings');
@@ -436,12 +453,12 @@ async function loadRenderOptions() {
   const reload = $('#reload-models');
   reload.disabled = true;
   fieldset.disabled = true;
-  status.textContent = 'Geïnstalleerde modellen en LoRA’s ophalen…';
+  status.textContent = 'Loading installed models and LoRAs…';
   try {
     const {models, loras, defaults} = await api('/render-options');
     for (const [selector, values, fallback, label] of [
-      ['#render-model', models, defaults.model, 'Kies een model'],
-      ['#render-lora', loras, defaults.lora, 'Kies een LoRA']
+      ['#render-model', models, defaults.model, 'Select a model'],
+      ['#render-lora', loras, defaults.lora, 'Select a LoRA']
     ]) {
       const select = $(selector);
       const current = select.value;
@@ -449,11 +466,11 @@ async function loadRenderOptions() {
       select.value = values.includes(current) ? current : values.includes(fallback) ? fallback : '';
     }
     if (!models.length || !loras.length) {
-      status.textContent = 'Er is nog geen model en LoRA beschikbaar om te kiezen.';
+      status.textContent = 'A model and LoRA are not available yet.';
       return;
     }
     fieldset.disabled = $('#profile').value !== 'own-settings';
-    status.textContent = 'Kies een LoRA die bij het geselecteerde MiniMax H3-model past.';
+    status.textContent = 'Select a LoRA compatible with the chosen MiniMax H3 model.';
   } catch (error) { status.textContent = error.message; }
   finally { reload.disabled = false; }
 }
@@ -486,16 +503,16 @@ $('#create-form').addEventListener('submit',async event => {
   event.preventDefault();
   const custom = $('#profile').value === 'own-settings';
   if (custom && $('#render-settings').disabled) {
-    $('#notice').textContent = 'Wacht tot Studio de modellen en LoRA’s heeft opgehaald.';
+    $('#notice').textContent = 'Wait for Studio to load the models and LoRAs.';
     return;
   }
   const files = [...$('#images').files];
   if (!files.length || files.length > 9 || files.some(file => file.size > 8*1024*1024)) {
-    $('#notice').textContent = 'Kies één tot negen beelden van maximaal 8 MiB per beeld.';
+    $('#notice').textContent = 'Choose one to nine images, up to 8 MiB each.';
     return;
   }
   $('#submit').disabled = true;
-  $('#notice').textContent = 'Je verhaal en referentiebeelden uploaden…';
+  $('#notice').textContent = 'Uploading your story and reference images…';
   try {
     const renderSettings = custom ? {
       model:$('#render-model').value, lora:$('#render-lora').value,
@@ -530,12 +547,42 @@ $('#resume').addEventListener('click',async () => {
   } catch (error) { $('#notice').textContent = error.message; }
   finally { $('#resume').disabled = false; }
 });
+$('#cancel-project').addEventListener('click',async () => {
+  const button = $('#cancel-project');
+  button.disabled = true;
+  try {
+    await post('/projects/' + state.id + '/cancel');
+  } catch (error) {
+    $('#notice').textContent = error.message;
+    button.disabled = false;
+  }
+});
+$('#cancel-all').addEventListener('click',async () => {
+  const button = $('#cancel-all');
+  button.disabled = true;
+  try {
+    await post('/projects/cancel');
+    await listProjects();
+  } catch (error) { $('#notice').textContent = error.message; }
+  finally { button.disabled = false; }
+});
+$('#clear-projects').addEventListener('click',async () => {
+  if (!window.confirm('Permanently delete all Studio projects, clips, and exported films on this pod?')) return;
+  const button = $('#clear-projects');
+  button.disabled = true;
+  try {
+    await post('/projects/clear');
+    if (location.hash) location.hash = '';
+    else navigate();
+  } catch (error) { $('#notice').textContent = error.message; }
+  finally { button.disabled = false; }
+});
 window.addEventListener('hashchange',navigate);
 api('/profiles').then(({profiles}) => {
   const select = $('#profile');
   const selected = select.value;
   const options = profiles.map(profile => new Option(profile.title, profile.id));
-  select.replaceChildren(...options, new Option('Eigen renderinstellingen', 'own-settings'));
+  select.replaceChildren(...options, new Option('Custom render settings', 'own-settings'));
   if ([...select.options].some(option => option.value === selected)) select.value = selected;
 }).catch(() => {});
 navigate();
