@@ -316,7 +316,11 @@ class StudioHandler(BaseHTTPRequestHandler):
                 chunk = stream.read(min(1024 * 1024, remaining))
                 if not chunk:
                     break
-                self.wfile.write(chunk)
+                try:
+                    self.wfile.write(chunk)
+                except (BrokenPipeError, ConnectionResetError):
+                    self.close_connection = True
+                    return
                 remaining -= len(chunk)
 
     def do_GET(self):

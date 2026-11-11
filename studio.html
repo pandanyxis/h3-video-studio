@@ -340,31 +340,36 @@ function showProject(project) {
     $('#saved-images').replaceChildren(...project.references.map((name,i) => thumbnail(base + '/' + name,'Reference ' + (i+1))));
     state.referenceId = project.id;
   }
-  const signature = JSON.stringify([project.id,project.shots,project.clips,project.can_revise]);
-  if (signature === state.shotSignature) return;
+  const signature = JSON.stringify([project.id,project.shots]);
+  const list = $('#shots');
+  if (signature !== state.shotSignature) list.replaceChildren();
   state.shotSignature = signature;
   $('#shots-section').hidden = !project.shots.length;
-  $('#shots').replaceChildren();
   project.shots.forEach((shot,i) => {
-    const detail = document.createElement('details');
-    const summary = document.createElement('summary');
-    const length = Number.isFinite(shot.duration_seconds)
-      ? ' · ' + new Intl.NumberFormat('en-US',{maximumFractionDigits:1}).format(shot.duration_seconds) + ' s' : '';
-    summary.textContent = 'Shot ' + (i+1) + length + ' · ' + shot.action;
-    const description = document.createElement('p');
-    description.className = 'shot-action';
-    description.textContent = shot.camera + ' · ' + shot.sound;
-    const prompt = document.createElement('p');
-    prompt.className = 'shot-prompt';
-    prompt.textContent = shot.prompt;
-    detail.append(summary,description,prompt);
+    let detail = list.children[i];
+    if (!detail) {
+      detail = document.createElement('details');
+      const summary = document.createElement('summary');
+      const length = Number.isFinite(shot.duration_seconds)
+        ? ' · ' + new Intl.NumberFormat('en-US',{maximumFractionDigits:1}).format(shot.duration_seconds) + ' s' : '';
+      summary.textContent = 'Shot ' + (i+1) + length + ' · ' + shot.action;
+      const description = document.createElement('p');
+      description.className = 'shot-action';
+      description.textContent = shot.camera + ' · ' + shot.sound;
+      const prompt = document.createElement('p');
+      prompt.className = 'shot-prompt';
+      prompt.textContent = shot.prompt;
+      detail.append(summary,description,prompt);
+      list.append(detail);
+    }
     const filename = 'shot-' + String(i+1).padStart(2,'0') + '.mp4';
-    if (project.clips.includes(filename)) {
+    if (!project.clips.includes(filename)) return;
+    if (!detail.querySelector('video')) {
       const video = document.createElement('video');
       video.className = 'shot-video';
       video.controls = true;
       video.playsInline = true;
-      video.preload = 'metadata';
+      video.preload = 'none';
       video.src = base + '/clips/' + filename;
       video.setAttribute('aria-label','Play shot ' + (i+1));
       const clip = document.createElement('a');
@@ -373,34 +378,33 @@ function showProject(project) {
       clip.download = filename;
       clip.textContent = 'Download shot ' + (i+1);
       detail.append(video,clip);
-      if (project.can_revise) {
-        const form = document.createElement('form');
-        form.className = 'shot-review';
-        const label = document.createElement('label');
-        label.textContent = 'What should change in shot ' + (i+1) + '?';
-        const feedback = document.createElement('textarea');
-        feedback.id = 'shot-feedback-' + i;
-        label.htmlFor = feedback.id;
-        feedback.required = true;
-        feedback.maxLength = 4000;
-        feedback.placeholder = 'For example, have both people pause before one extends a hand.';
-        const button = document.createElement('button');
-        button.className = 'secondary';
-        button.textContent = 'Revise shot and create a new film version';
-        form.append(label,feedback,button);
-        form.addEventListener('submit',async event => {
-          event.preventDefault();
-          button.disabled = true;
-          try {
-            const revised = await post(base + '/revisions',{shot:i,feedback:feedback.value});
-            location.hash = revised.id;
-          } catch (error) { $('#notice').textContent = error.message; }
-          finally { button.disabled = false; }
-        });
-        detail.append(form);
-      }
     }
-    $('#shots').append(detail);
+    if (project.can_revise && !detail.querySelector('form')) {
+      const form = document.createElement('form');
+      form.className = 'shot-review';
+      const label = document.createElement('label');
+      label.textContent = 'What should change in shot ' + (i+1) + '?';
+      const feedback = document.createElement('textarea');
+      feedback.id = 'shot-feedback-' + i;
+      label.htmlFor = feedback.id;
+      feedback.required = true;
+      feedback.maxLength = 4000;
+      feedback.placeholder = 'For example, have both people pause before one extends a hand.';
+      const button = document.createElement('button');
+      button.className = 'secondary';
+      button.textContent = 'Revise shot and create a new film version';
+      form.append(label,feedback,button);
+      form.addEventListener('submit',async event => {
+        event.preventDefault();
+        button.disabled = true;
+        try {
+          const revised = await post(base + '/revisions',{shot:i,feedback:feedback.value});
+          location.hash = revised.id;
+        } catch (error) { $('#notice').textContent = error.message; }
+        finally { button.disabled = false; }
+      });
+      detail.append(form);
+    }
   });
 }
 async function poll(id, generation) {
