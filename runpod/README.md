@@ -20,6 +20,8 @@ De template publiceert alleen de Studio-interface op poort `8190/http`. Maak een
 
 Qwen en ComfyUI luisteren binnen de Pod. Bij de eerste start downloaden en verifiëren ze de gewichten. De logregels `[qwen]` en `[comfy]` laten de voortgang zien.
 
+Controleer bij het uitrollen in de Runpod-console dat er een volume op `/workspace` is gekoppeld. Gebruik minstens 120 GB voor de standaardmodellen en reserveer extra ruimte voor eigen modellen. Bij **Pods → jouw pod → Logs** verschijnt `[studio] Klaar om te renderen` zodra Studio, Qwen en het standaardrenderprofiel beschikbaar zijn.
+
 De runtime genereert standaard een Qwen-sleutel en bewaart die privé op `/workspace`. Voor een vaste sleutel kun je `LLAMA_API_KEY` via Runpod Secrets instellen. Gebruik eventueel `HF_TOKEN` of `CIVITAI_TOKEN` voor aanvullende downloads. Houd `runtime-settings.json` met lokale instellingen buiten Git. Zie [de modelconfiguratie](RUNPOD-MODELS.md) voor opties.
 
 ## GPU-proef

@@ -1,11 +1,16 @@
 """Adapt the pinned Continuity graph to the models shipped by this image."""
+import hashlib
 import json
 import os
 from pathlib import Path
 import re
 
+from studio_storage import atomic_json
+
 PROFILES = Path("/ComfyUI/custom_nodes/ComfyUI-H3-Continuity-Studio/"
                 "h3_continuity/timeline_api/profiles")
+CONFIGURED = Path("/workspace/ComfyUI/user/__h3c_api/profiles/configured")
+SELECTION_PREFIX = "studio-selection-"
 MODEL_NAMES = {
     "qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors":
         "qwen3vl_32b_minimax_h3_int8_convrot.safetensors",
@@ -19,7 +24,7 @@ MODEL_NAMES = {
         "minimax_h3_fl2v_turbo_8step_v1.0_768p_comfyui_bf16.safetensors",
 }
 
-def write_profile(base, profile_id, title, model, lora, steps, strength):
+def build_profile(base, profile_id, title, model, lora, steps, strength):
     profile = json.loads(base)
     profile.update(id=profile_id, title=title)
     graph = profile["workflow"]["api"]
@@ -30,7 +35,50 @@ def write_profile(base, profile_id, title, model, lora, steps, strength):
     for node in profile["workflow"]["ui"]["nodes"]:
         for index, value in widgets.get(node["id"], {}).items():
             node["widgets_values"][index] = value
-    (PROFILES / f"{profile_id}.json").write_text(json.dumps(profile), encoding="utf-8")
+    return profile
+
+
+def write_profile(base, profile_id, title, model, lora, steps, strength):
+    profile = build_profile(base, profile_id, title, model, lora, steps, strength)
+    atomic_json(PROFILES / f"{profile_id}.json", profile)
+
+
+def validate_sampling(steps, strength):
+    if type(steps) is not int or not 1 <= steps <= 100:
+        raise ValueError("Een profiel vereist 1 tot 100 samplingstappen.")
+    if type(strength) not in (int, float) or not 0 <= strength <= 2:
+        raise ValueError("Een profiel vereist een LoRA-sterkte van 0 tot 2.")
+
+
+def default_settings():
+    profile = json.loads((PROFILES / "studio-turbo8.json").read_text(encoding="utf-8"))
+    graph = profile["workflow"]["api"]
+    return {
+        "model": graph["104"]["inputs"]["unet_name"],
+        "lora": graph["106"]["inputs"]["lora_name"],
+        "steps": graph["114"]["inputs"]["steps"],
+        "lora_strength": graph["106"]["inputs"]["strength_model"],
+    }
+
+
+def selection_profile(settings, options):
+    if not isinstance(settings, dict):
+        raise ValueError("Ongeldige renderinstellingen.")
+    model, lora = settings.get("model"), settings.get("lora")
+    steps, strength = settings.get("steps"), settings.get("lora_strength")
+    validate_sampling(steps, strength)
+    if model not in options["models"] or lora not in options["loras"]:
+        raise ValueError("Kies een geïnstalleerd model en een geïnstalleerde LoRA.")
+
+    base = (PROFILES / "studio-turbo8.json").read_text(encoding="utf-8")
+    profile = build_profile(base, "", "Eigen renderinstellingen", model, lora, steps, float(strength))
+    content = json.dumps(profile, sort_keys=True, ensure_ascii=False)
+    profile_id = SELECTION_PREFIX + hashlib.sha256(content.encode()).hexdigest()[:40]
+    profile["id"] = profile_id
+    path = CONFIGURED / f"{profile_id}.json"
+    if not path.is_file():
+        atomic_json(path, profile)
+    return profile_id
 
 
 def main():
@@ -51,10 +99,7 @@ def main():
             raise ValueError("Gebruik voor een profiel-ID kleine letters, cijfers, - of _.")
         steps = config.get("steps", 8)
         strength = config.get("lora_strength", 0.8)
-        if type(steps) is not int or not 1 <= steps <= 100:
-            raise ValueError("Een profiel vereist 1 tot 100 samplingstappen.")
-        if type(strength) not in (int, float) or not 0 <= strength <= 2:
-            raise ValueError("Een profiel vereist een LoRA-sterkte van 0 tot 2.")
+        validate_sampling(steps, strength)
         write_profile(raw, f"custom-{name}", config.get("title", name),
                       config.get("model", model), config.get("lora", lora), steps, strength)
 

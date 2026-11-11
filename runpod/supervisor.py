@@ -1,8 +1,10 @@
 """Run the personal startup scripts in separate process groups."""
+import json
 import os
 import signal
 import subprocess
 import time
+from urllib.request import urlopen
 
 
 def enabled(name):
@@ -10,6 +12,18 @@ def enabled(name):
     if value not in ("true", "false"):
         raise SystemExit(f"{name} must be true or false")
     return value == "true"
+
+
+def studio_ready():
+    try:
+        for url in ("http://127.0.0.1:8190/health", "http://127.0.0.1:8080/health"):
+            with urlopen(url, timeout=2):
+                pass
+        with urlopen("http://127.0.0.1:8188/h3c/api/v1/capabilities", timeout=2) as response:
+            profiles = json.load(response)["profiles"]
+        return any(profile["id"] == "studio-turbo8" and profile.get("ready") for profile in profiles)
+    except (OSError, ValueError, KeyError):
+        return False
 
 
 def main():
@@ -38,11 +52,18 @@ def main():
             commands.append(["bash", "/usr/local/bin/start-services.sh"])
         for cmd in commands:
             children.append(subprocess.Popen(cmd, start_new_session=True))
+        announced = False
+        next_probe = time.monotonic()
         while not stopping:
             for child in children:
                 if child.poll() is not None:
                     print(f"Startup service exited: {child.args[1]} ({child.returncode})", flush=True)
                     return 1
+            if studio and not announced and time.monotonic() >= next_probe:
+                if studio_ready():
+                    print("[studio] Klaar om te renderen: Studio, Qwen en ComfyUI zijn beschikbaar.", flush=True)
+                    announced = True
+                next_probe = time.monotonic() + 10
             time.sleep(1)
         return 0
     finally:

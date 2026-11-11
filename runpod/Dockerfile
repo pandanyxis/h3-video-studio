@@ -48,9 +48,8 @@ RUN --mount=from=builder,source=/opt/cuda-link,target=/opt/cuda-link \
     && LD_LIBRARY_PATH=/opt/cuda-link:/opt/llama/lib:$LD_LIBRARY_PATH /opt/llama/bin/llama-server --version
 COPY requirements.txt /opt/studio/requirements.txt
 RUN /opt/venv/bin/pip install --no-cache-dir -r /opt/studio/requirements.txt
-COPY plan_story.py prepare_timeline.py export_project.py run_studio.py studio_writer.py studio_storage.py studio_render.py studio_web.py studio.html /opt/studio/
-COPY runpod/studio-profile.py /opt/combined/
-RUN python3 /opt/combined/studio-profile.py
+COPY plan_story.py prepare_timeline.py export_project.py run_studio.py studio_writer.py studio_storage.py studio_profiles.py studio_render.py studio_web.py studio.html /opt/studio/
+RUN python3 /opt/studio/studio_profiles.py
 ENV PATH=/opt/venv/bin:$PATH
 ENV ENABLE_STUDIO=true ENABLE_COMFYUI=true ENABLE_QWEN=true CTX_SIZE=65536 \
     COMFY_START_SCRIPT=/opt/combined/start-comfy.sh \

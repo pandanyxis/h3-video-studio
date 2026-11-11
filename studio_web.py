@@ -20,6 +20,7 @@ import warnings
 from PIL import Image, UnidentifiedImageError
 
 from prepare_timeline import ASPECT_SIZES, FPS
+from studio_profiles import SELECTION_PREFIX, default_settings, selection_profile
 from studio_render import RenderClient, RenderError
 from studio_storage import atomic_json, progress, read_json
 
@@ -42,16 +43,19 @@ def render_profiles():
     return [DEFAULT_PROFILE, *(
         {"id": item["id"], "title": item.get("title", item["id"])}
         for item in profiles if item.get("ready") and item["id"] != DEFAULT_PROFILE["id"]
+        and not item["id"].startswith(SELECTION_PREFIX)
     )]
 
 
 def stage(payload):
     story, images = payload.get("story"), payload.get("images")
     profile = payload.get("profile", DEFAULT_PROFILE["id"])
+    settings = payload.get("render_settings")
     aspect = payload.get("aspect", "auto")
     if not isinstance(aspect, str) or (aspect != "auto" and aspect not in ASPECT_SIZES):
         raise ValueError("Kies automatisch, 16:9 of 9:16.")
-    if profile != DEFAULT_PROFILE["id"] and not any(profile == item["id"] for item in render_profiles()):
+    if settings is None and profile != DEFAULT_PROFILE["id"] and not any(
+            profile == item["id"] for item in render_profiles()):
         raise ValueError("Dit renderprofiel is niet beschikbaar.")
     if not isinstance(story, str) or not story.strip() or len(story) > 20_000:
         raise ValueError("Voer een shotidee of verhaal in van maximaal 20.000 tekens.")
@@ -81,6 +85,12 @@ def stage(payload):
                         width, height = height, width
                     aspect = "9:16" if height > width else "16:9"
             (project / f"reference-{index:02d}.{extension}").write_bytes(data)
+        if settings is not None:
+            try:
+                options = RenderClient().model_options()
+            except (OSError, ValueError, RenderError):
+                raise ValueError("ComfyUI kan de geïnstalleerde modellen nog niet ophalen.") from None
+            profile = selection_profile(settings, options)
         atomic_json(project / "project.json", {
             "title": story.strip().splitlines()[0][:80],
             "created": datetime.now(timezone.utc).isoformat(),
@@ -246,6 +256,13 @@ class StudioHandler(BaseHTTPRequestHandler):
             return
         if self.path == "/profiles":
             return self.json(200, profiles=render_profiles())
+        if self.path == "/render-options":
+            try:
+                options = RenderClient().model_options()
+                defaults = default_settings()
+            except (OSError, ValueError, RenderError):
+                return self.json(503, error="ComfyUI is nog niet klaar. Probeer de modellen opnieuw te laden.")
+            return self.json(200, **options, defaults=defaults)
         if self.path == "/":
             return self.reply(200, "text/html; charset=utf-8", (HERE / "studio.html").read_bytes())
         if self.path == "/projects":

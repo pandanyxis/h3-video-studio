@@ -11,6 +11,10 @@ from urllib.request import HTTPRedirectHandler, Request, build_opener
 import uuid
 
 PREFIX = "/h3c/api/v1"
+MODEL_OPTIONS = {
+    "models": ("UNETLoader", "unet_name"),
+    "loras": ("LoraLoaderModelOnly", "lora_name"),
+}
 
 
 class RenderError(RuntimeError):
@@ -29,7 +33,8 @@ class RenderClient:
 
     def url(self, path):
         parts = urlsplit(path)
-        if parts.scheme or parts.netloc or not path.startswith(PREFIX + "/"):
+        node_paths = {f"/object_info/{node}" for node, _ in MODEL_OPTIONS.values()}
+        if parts.scheme or parts.netloc or (not path.startswith(PREFIX + "/") and path not in node_paths):
             raise RenderError("Ongeldig bestandadres van de renderdienst.")
         return self.base_url + path
 
@@ -56,6 +61,19 @@ class RenderClient:
 
     def capabilities(self):
         return self.request(PREFIX + "/capabilities")
+
+    def model_options(self):
+        options = {}
+        for key, (node, field) in MODEL_OPTIONS.items():
+            schema = self.request(f"/object_info/{node}")
+            try:
+                choices = schema[node]["input"]["required"][field][0]
+            except (IndexError, KeyError, TypeError):
+                raise RenderError("ComfyUI geeft geen beschikbare modelkeuzes terug.") from None
+            if not isinstance(choices, list) or any(not isinstance(choice, str) for choice in choices):
+                raise RenderError("ComfyUI geeft ongeldige modelkeuzes terug.")
+            options[key] = sorted(set(choices), key=str.casefold)
+        return options
 
     def create(self, document, key):
         return self.request(PREFIX + "/projects", "POST", document, key)
