@@ -8,6 +8,7 @@ from pathlib import Path
 
 from export_project import export_project
 from prepare_timeline import ASPECT_SIZES, timeline_document
+from studio_refine import review_transitions
 from studio_render import RenderClient, RenderError
 from studio_storage import ProductionCancelled, atomic_json, check_cancelled, gpu_lock, progress, read_json
 from studio_writer import DEFAULT_WRITER_PROMPT, plan_and_write, qwen_ready, read_reference_notes, revise_shot
@@ -179,6 +180,9 @@ def produce(args):
         shot = f"shot-{index:02d}"
         client.download(artifacts[f"box:{shot}"], clips / f"{shot}.mp4")
     check_cancelled(project)
+    review_transitions(project, state["plan"]["shots"])
+    check_cancelled(project)
+    progress(project, "exporting")
     export_project(project, film)
     progress(project, "done")
     return film

@@ -222,7 +222,8 @@ summary { cursor:pointer; font-size:13px; font-weight:550; }
         <li data-stage="planning"><span class="step-number">2</span><div><strong>Story &amp; Shot Planner</strong><small>Shot count and duration</small></div></li>
         <li data-stage="writing"><span class="step-number">3</span><div><strong>Studio Writer</strong><small>Movement, camera, and sound</small></div></li>
         <li data-stage="rendering"><span class="step-number">4</span><div><strong>Render clips</strong><small>Continuity across shots</small></div></li>
-        <li data-stage="exporting"><span class="step-number">5</span><div><strong>Export MP4</strong><small>Your film and individual clips</small></div></li>
+        <li data-stage="reviewing"><span class="step-number">5</span><div><strong>Review transitions</strong><small>Visual continuity between clips</small></div></li>
+        <li data-stage="exporting"><span class="step-number">6</span><div><strong>Export MP4</strong><small>Your film and individual clips</small></div></li>
       </ol>
     </section>
   </div>
@@ -231,13 +232,14 @@ summary { cursor:pointer; font-size:13px; font-weight:550; }
 <script>
 const $ = selector => document.querySelector(selector);
 const state = { id:null, generation:0, timer:null, sidebarTimer:null, previewUrls:[], shotSignature:null, referenceId:null };
-const stages = ['input','planning','writing','rendering','exporting'];
-const stepNames = ['Your idea & references','Story & Shot Planner','Studio Writer','Render clips','Export MP4'];
+const stages = ['input','planning','writing','rendering','reviewing','exporting'];
+const stepNames = ['Your idea & references','Story & Shot Planner','Studio Writer','Render clips','Review transitions','Export MP4'];
 const labels = {
   queued:'Your project is queued.', preparing:'Studio is waiting for the GPU and models. The first startup can take a while.',
   planning:'Qwen analyzes your idea and reference images to plan the shot count and duration.', writing:'Studio Writer is writing the H3 prompt for each shot.',
   references:'Studio is attaching reference images to the shots.', rendering:'Studio is rendering your clips.',
-  exporting:'Studio is downloading and assembling the clips.', done:'Your film is ready.', failed:'Production was interrupted.'
+  reviewing:'Qwen is comparing frames across clip boundaries.',
+  exporting:'Studio is preparing the MP4 and individual clips.', done:'Your film is ready.', failed:'Production was interrupted.'
 };
 const statusLabels = {queued:'Queued',running:'In production',done:'Complete',failed:'Interrupted'};
 statusLabels.cancelled = 'Cancelled';
@@ -262,6 +264,33 @@ function thumbnail(source, caption) {
   label.textContent = caption;
   figure.append(image,label);
   return figure;
+}
+function transitionReview(index, review) {
+  const panel = document.createElement('section');
+  panel.className = 'transition-review';
+  const heading = document.createElement('h3');
+  const verdicts = {pass:'Looks consistent',needs_attention:'Needs attention',uncertain:'Uncertain',unavailable:'Unavailable'};
+  heading.textContent = 'Shot ' + index + ' → ' + (index+1) + ' · ' + verdicts[review.verdict];
+  const observations = document.createElement('p');
+  observations.textContent = review.observations;
+  panel.append(heading,observations);
+  if (review.suggestion) {
+    const suggestion = document.createElement('p');
+    suggestion.textContent = review.suggestion;
+    const button = document.createElement('button');
+    button.className = 'secondary';
+    button.type = 'button';
+    button.textContent = 'Add suggestion to Refine clip';
+    button.addEventListener('click', () => {
+      const feedback = panel.parentElement.querySelector('.refine-panel textarea');
+      if (!feedback) return;
+      const note = [feedback.value.trim(), review.suggestion].filter(Boolean).join('\n\n');
+      feedback.value = note.slice(0, feedback.maxLength);
+      feedback.focus();
+    });
+    panel.append(suggestion,button);
+  }
+  return panel;
 }
 function refineForm(base, index, video, savedReview) {
   const generation = state.generation;
@@ -414,6 +443,7 @@ function showProject(project) {
     description += ' Rendering shot ' + project.progress.current_shot + '.';
   }
   if (stage === 'writing' && total) description += ' ' + total + (total === 1 ? ' shot planned.' : ' shots planned.');
+  if (stage === 'reviewing') description += ' ' + (project.progress.completed ?? 0) + ' of ' + total + ' transitions checked.';
   if ($('#project-status').textContent !== description) $('#project-status').textContent = description;
   $('#notice').textContent = project.status === 'failed' ? (project.progress.error || labels.failed) : '';
   $('#resume').hidden = project.status !== 'failed';
@@ -491,6 +521,7 @@ function showProject(project) {
       detail.append(video,clip);
     }
     if (project.can_revise && !detail.querySelector('.refine-panel')) {
+      if (project.transitions?.[i]) detail.append(transitionReview(i,project.transitions[i]));
       detail.append(refineForm(base,i,detail.querySelector('video'),project.refinements?.[i]));
     }
     if (project.parent && project.revised_shot === i && !detail.querySelector('.previous-take')) {

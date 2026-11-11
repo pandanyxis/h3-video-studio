@@ -18,6 +18,8 @@ Set `STUDIO_PASSWORD` to a password of at least 16 characters. Open **Connect â†
 
 Add a story and reference images, then click **Make my film**. Add optional notes to each image to identify people, objects, locations, or the intended use of that reference. The Planner, Writer, and clip review use those notes. The project page shows the active step, individual clips as they become available, and the finished MP4. Under **Review clips**, open a shot and use **Refine clip** to draft a revision from sampled frames and your feedback. Review or edit the proposed prompt before choosing **Render new take**. Studio saves the result as a separate film version with access to the previous take. Use **Stop production** or **Stop all productions** to request cancellation. **Clear projects** deletes saved Studio projects and exports after all productions stop.
 
+After rendering, Studio automatically asks Qwen to compare frames from the end of each clip with frames from the start of the next, taking planned cuts into account. Open the incoming shot under **Review clips** to see the verdict and add any suggestion to **Refine clip** before deciding whether to render a new take. An unavailable review still allows the film to export.
+
 Studio saves the shot plan, prompts, and render request for recovery. If a render is interrupted, open its production log and resume the project. Recovery requires the project files to remain on disk. Temporary storage is erased when the pod stops, so download your films and clips first.
 
 ## Run over SSH

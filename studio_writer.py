@@ -41,7 +41,7 @@ def read_reference_notes(project):
     return read_json(path) if path.is_file() else {}
 
 
-def ask_qwen(instructions, text, pictures, *, clip_frames=(), reference_notes=None):
+def ask_qwen(instructions, text, pictures, *, clip_frames=(), reference_notes=None, timeout=900):
     content = [{"type": "text", "text": text}]
     notes = reference_notes or {}
     for slot, path in pictures:
@@ -54,10 +54,10 @@ def ask_qwen(instructions, text, pictures, *, clip_frames=(), reference_notes=No
             {"type": "text", "text": label},
             {"type": "image_url", "image_url": {"url": f"data:{mime};base64,{encoded}"}},
         ])
-    for timestamp, path in clip_frames:
+    for timestamp, path, *labels in clip_frames:
         encoded = base64.b64encode(path.read_bytes()).decode("ascii")
         content.extend([
-            {"type": "text", "text": f"Rendered clip frame at {timestamp:.2f} seconds. This is review evidence."},
+            {"type": "text", "text": f"{labels[0] if labels else 'Rendered clip'} frame at {timestamp:.2f} seconds. This is review evidence."},
             {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{encoded}"}},
         ])
     key = os.environ.get("LLAMA_API_KEY")
@@ -83,7 +83,7 @@ def ask_qwen(instructions, text, pictures, *, clip_frames=(), reference_notes=No
             data=json.dumps(dict(payload, max_tokens=max_tokens)).encode(),
             headers={"Content-Type": "application/json", "Authorization": "Bearer " + key},
         )
-        with urlopen(request, timeout=900) as response:
+        with urlopen(request, timeout=timeout) as response:
             choice = json.load(response)["choices"][0]
         if choice.get("finish_reason") == "length":
             continue

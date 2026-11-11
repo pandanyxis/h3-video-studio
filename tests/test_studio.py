@@ -17,6 +17,7 @@ from PIL import Image
 
 import run_studio
 from studio_refine import review_timestamps
+import studio_refine
 from studio_render import RenderClient, RenderError
 from studio_storage import read_json
 from prepare_timeline import timeline_document
@@ -426,12 +427,22 @@ class ProductionTests(unittest.TestCase):
                 patch.object(run_studio, "qwen_ready", return_value=True),
                 patch.object(run_studio, "plan_and_write", return_value=plan) as planner,
                 patch.object(run_studio.time, "sleep"),
+                patch.object(studio_refine, "review_transition", side_effect=[
+                    OSError("Qwen temporarily unavailable"),
+                    *[{"verdict": "pass", "observations": "Consistent", "suggestion": ""}] * 5,
+                ]) as reviewer,
                 patch.object(run_studio, "export_project", side_effect=export),
             ):
                 with self.assertRaises(OSError):
                     run_studio.produce(args)
                 saved_key = read_json(project / "production.json")["key"]
                 self.assertEqual(run_studio.produce(args).read_bytes(), b"movie")
+                self.assertEqual(reviewer.call_count, 6)
+                self.assertEqual([path.name for path in reviewer.call_args_list[0].args[:2]],
+                                 ["shot-01.mp4", "shot-02.mp4"])
+                transitions = read_json(project / "transitions.json")
+                self.assertEqual(transitions["1"]["verdict"], "unavailable")
+                self.assertEqual(transitions["2"]["verdict"], "pass")
                 planner.assert_called_once_with("A boat", [("image17", image)], project,
                                                 writer_prompt=writer.DEFAULT_WRITER_PROMPT)
                 client.create.assert_called_once()

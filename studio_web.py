@@ -220,6 +220,8 @@ def project_data(project, details=False):
             review = read_json(path)
             latest_reviews[review["shot"]] = review
         result["refinements"] = latest_reviews
+        transitions = project / "transitions.json"
+        result["transitions"] = read_json(transitions) if transitions.is_file() else {}
         result["story"] = (project / "story.txt").read_text(encoding="utf-8")
         result["references"] = [path.name for path in sorted(project.glob("reference-*"))]
         result["image_notes"] = read_reference_notes(project)
