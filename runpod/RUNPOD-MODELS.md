@@ -23,6 +23,8 @@ Stel HF_TOKEN en CIVITAI_TOKEN in via Runpod Secrets. Selecteer de downloads met
 
 Gebruik unieke bestandsnamen. Een bestaand bestand op de bestemming wordt hergebruikt. Reserveer ruimte voor de HF-downloadcache.
 
+Civitai-bestanden vanaf 1 GiB gebruiken standaard vier verbindingen als de downloadserver bytebereiken ondersteunt. Met `CIVITAI_DOWNLOAD_WORKERS` kies je 1 tot 8 verbindingen. Kies 1 voor een enkele verbinding. De downloader controleert altijd de SHA-256 van het volledige bestand.
+
 ## Validatie uitsluitend op Runpod
 
 Bouw op Runpod met de repo-root als buildcontext en runpod/Dockerfile als Dockerfile. Geef de eigen image expliciet mee aan make_template.py via --image. Start op een RTX PRO 6000 Blackwell 96 GB met lege modelopslag. Controleer de standaarddownloads, render een korte T2V- en I2V-clip en meet piek-VRAM. Test daarna een Civitai-extra en een HF-extra, inclusief hergebruik bij een tweede start.

@@ -2,6 +2,7 @@ import hashlib
 import importlib.util
 from pathlib import Path
 import tempfile
+from threading import Barrier
 import unittest
 from unittest.mock import MagicMock, patch
 
@@ -12,6 +13,62 @@ spec.loader.exec_module(downloader)
 
 
 class DownloaderTests(unittest.TestCase):
+    def test_parallel_download_resumes_and_uses_multiple_connections(self):
+        content = b'abcdefghijkl'
+        digest = hashlib.sha256(content).hexdigest()
+        probe = MagicMock()
+        probe.get.return_value.__enter__.return_value = MagicMock(
+            status_code=206, headers={'Content-Range': 'bytes 0-0/12'}, url='https://cdn.example/signed')
+        probe.headers = {'Authorization': 'Bearer private'}
+        barrier = Barrier(2, timeout=5)
+        requested = []
+
+        def get(url, *, headers, stream, timeout):
+            self.assertEqual(url, 'https://cdn.example/signed')
+            self.assertNotIn('Authorization', headers)
+            byte_range = headers['Range'].removeprefix('bytes=')
+            start, end = map(int, byte_range.split('-'))
+            requested.append(byte_range)
+            barrier.wait()
+            response = MagicMock(status_code=206, headers={'Content-Range': f'bytes {byte_range}/12'})
+            response.iter_content.return_value = [content[start:end + 1]]
+            response.__enter__.return_value = response
+            return response
+
+        with tempfile.TemporaryDirectory() as directory:
+            target = Path(directory) / 'model.safetensors'
+            work = Path(directory) / 'ranges'
+            work.mkdir()
+            (work / 'data').write_bytes(content[:4] + b'\0' * 8)
+            (work / '0-3').touch()
+            worker = MagicMock()
+            worker.__enter__.return_value.get.side_effect = get
+            with patch.object(downloader, 'RANGE_SIZE', 4), \
+                    patch.object(downloader.requests, 'Session', return_value=worker):
+                self.assertTrue(downloader.download_parallel(
+                    'https://civitai.com/download', probe, target, work, digest, 2))
+            self.assertCountEqual(requested, ['4-7', '8-11'])
+            self.assertEqual(target.read_bytes(), content)
+            self.assertFalse(work.exists())
+
+    def test_parallel_download_falls_back_if_server_ignores_ranges(self):
+        content = b'complete model'
+        item = {'name': 'model.safetensors', 'sizeKB': downloader.PARALLEL_MIN_SIZE_KB,
+                'hashes': {'SHA256': hashlib.sha256(content).hexdigest()},
+                'downloadUrl': 'https://civitai.com/download'}
+        session = MagicMock()
+        response = session.get.return_value.__enter__.return_value
+        response.status_code = 200
+        response.headers = {'Content-Length': str(len(content))}
+        response.iter_content.return_value = [content]
+        with tempfile.TemporaryDirectory() as directory, \
+                patch.object(downloader, 'resolve', return_value=item), \
+                patch.dict(downloader.os.environ, {'CIVITAI_DOWNLOAD_WORKERS': '4'}):
+            downloader.download_with_session('version:1', directory, None, session)
+            self.assertEqual((Path(directory) / item['name']).read_bytes(), content)
+        self.assertEqual(session.get.call_args_list[0].kwargs['headers']['Range'], 'bytes=0-0')
+        self.assertEqual(session.get.call_args_list[1].kwargs['headers'], {})
+
     def test_exact_file_is_selected_instead_of_primary(self):
         session = MagicMock()
         session.get.return_value.json.return_value = {'files': [
