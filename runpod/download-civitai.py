@@ -100,8 +100,12 @@ def download_parallel(url, session, target, work, digest, workers):
             return False
         total = int(content_range[1])
         endpoint = probe.url
+        original, redirected = urlparse(url), urlparse(endpoint)
+        if redirected.scheme != 'https':
+            return False
         headers = {'Authorization': session.headers['Authorization']} if (
-            urlparse(url).netloc == urlparse(endpoint).netloc and 'Authorization' in session.headers
+            (original.scheme, original.netloc) == (redirected.scheme, redirected.netloc)
+            and 'Authorization' in session.headers
         ) else {}
 
     if total <= RANGE_SIZE:
