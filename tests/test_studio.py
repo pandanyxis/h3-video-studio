@@ -274,8 +274,20 @@ class ProductionTests(unittest.TestCase):
             client.create.return_value = {"id": "project", "revision": 1}
             client.plan.return_value = {"plan_sha256": "hash"}
             client.render.side_effect = [OSError("response lost"), {"id": "job"}]
-            client.wait.return_value = {"artifacts": [{"kind": "box", "unit_id": f"box:shot-{i:02d}"} for i in range(1,8)]}
             client.download.side_effect = lambda artifact, target: target.write_bytes(b"clip")
+            artifacts = [{"kind": "box", "unit_id": f"box:shot-{i:02d}"} for i in range(1, 8)]
+
+            def wait_for_clips(job, on_update):
+                on_update({"state": "queued", "attempts": [
+                    {"state": "verified", "unit_id": "box:shot-01", "artifact": artifacts[0]},
+                    {"state": "pending", "unit_id": "box:shot-02"},
+                ], "progress": {"current": "box:shot-02"}})
+                self.assertEqual((project / "clips" / "shot-01.mp4").read_bytes(), b"clip")
+                self.assertFalse((project / "clips" / "shot-02.mp4").exists())
+                self.assertEqual(read_json(project / "progress.json")["current_shot"], 2)
+                return {"artifacts": artifacts}
+
+            client.wait.side_effect = wait_for_clips
             args = SimpleNamespace(project=project, story=story, references=[image], profile="studio-turbo8", resume=False)
             def export(root, target):
                 self.assertEqual(len(list((root / "clips").glob("*.mp4"))), 7)

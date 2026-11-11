@@ -1,0 +1,12 @@
+diff --git a/h3_continuity/timeline_api/jobs.py b/h3_continuity/timeline_api/jobs.py
+--- a/h3_continuity/timeline_api/jobs.py
++++ b/h3_continuity/timeline_api/jobs.py
+@@ -16,7 +16,7 @@ def public_job(job, blocked_by=None):
+ def public_job(job, blocked_by=None):
+     result = {key: copy.deepcopy(job[key]) for key in ("api_version", "id", "project_id", "revision", "profile_sha256",
+         "plan_sha256", "selection", "state", "artifacts", "error", "created", "progress", "poll_url")}
+-    result["attempts"] = [{key: copy.deepcopy(attempt[key]) for key in ("id", "unit_id", "state", "prompt_id") if key in attempt}
++    result["attempts"] = [{key: copy.deepcopy(attempt[key]) for key in ("id", "unit_id", "state", "prompt_id", "artifact") if key in attempt}
+                        for attempt in job["attempts"]]
+     result["progress"]["current"] = next((attempt["unit_id"] for attempt in job["attempts"] if attempt["state"] != "verified"), None)
+     result["blocked_by"] = copy.deepcopy(blocked_by)

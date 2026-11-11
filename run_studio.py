@@ -120,19 +120,19 @@ def produce(args):
             client.resume(state["job_id"])
 
     def update(job):
-        if job.get("state") == "running":
+        if job.get("state") in ("queued", "running"):
             for attempt in job.get("attempts", []):
                 unit = attempt["unit_id"]
-                if attempt["state"] != "verified" or not re.fullmatch(r"box:shot-\d{2}", unit):
+                artifact = attempt.get("artifact")
+                if (attempt["state"] != "verified" or not re.fullmatch(r"box:shot-\d{2}", unit)
+                        or not artifact or artifact.get("unit_id") != unit):
                     continue
                 box = unit.split(":")[1]
                 target = clips / f"{box}.mp4"
                 if target.is_file():
                     continue
                 try:
-                    artifact = client.current_clip(state["project_id"], box)
-                    if artifact:
-                        client.download(artifact, target)
+                    client.download(artifact, target)
                 except (OSError, RenderError) as error:
                     print(f"Preview voor {box} tijdelijk niet beschikbaar: {error}", flush=True)
         current = (job.get("progress") or {}).get("current") or ""
