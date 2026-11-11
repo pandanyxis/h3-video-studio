@@ -78,11 +78,16 @@ def review_transition(outgoing, incoming, directory, planned_before, planned_aft
             raise ValueError("Transition frames are incomplete.")
         frames.extend((timestamp, path, label) for timestamp, path in evidence)
     result = ask_qwen(
-        "Review the visual transition using the labeled frames on both sides. Compare visible subject identity, "
-        "pose, screen direction, movement, wardrobe, lighting and object placement when relevant. "
-        "Use the planned actions and deliberate_cut flag to judge whether a change is intentional. "
-        "A deliberate cut may change framing, time or location. Use only visible evidence and state uncertainty "
-        "when the frames are insufficient. Return JSON with verdict (pass, needs_attention or uncertain), "
+        "Review whether the visual transition feels natural using the labeled frames on both sides. "
+        "Track each visible person separately. For continuous action, check whether posture, limb positions, "
+        "direction and pace carry through plausibly. Look for sudden resets, jumps, or limbs merging between "
+        "people. Compare visible garments, layers and accessories for each person. Flag clothing that suddenly "
+        "appears, disappears or changes during continuous action, allowing for framing and occlusion. "
+        "Also check identity, lighting and object placement when relevant. Use the planned actions and "
+        "deliberate_cut flag to judge the intended transition. A new camera angle alone does not explain a "
+        "wardrobe change. An explicit clothing change or time jump may explain it. Use only visible evidence "
+        "and state uncertainty when the frames are insufficient. "
+        "Return JSON with verdict (pass, needs_attention or uncertain), "
         "observations (one or two short English sentences), and suggestion (a short, specific English note "
         "for refining the incoming shot if needed, otherwise an empty string).",
         json.dumps({"outgoing_action": planned_before["action"], "incoming_action": planned_after["action"],
