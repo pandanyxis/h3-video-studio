@@ -185,7 +185,17 @@ def render_with_reviews(client, args, project, state, receipt, clips):
                         print(f"Review of shot {index} lost its Qwen connection. "
                               f"Retrying in {retry_delay} seconds: {error}", flush=True)
                         time.sleep(retry_delay)
-                        check_cancelled(project)
+                        ready_until = time.monotonic() + 60
+                        while True:
+                            check_cancelled(project)
+                            try:
+                                if qwen_ready():
+                                    break
+                            except OSError:
+                                pass
+                            if time.monotonic() >= ready_until:
+                                raise RuntimeError("Qwen did not become ready after the connection dropped.") from error
+                            time.sleep(3)
             except (OSError, RuntimeError, ValueError, subprocess.SubprocessError) as error:
                 raise RuntimeError(
                     f"Could not review shot {index} before rendering shot {index + 1}. "

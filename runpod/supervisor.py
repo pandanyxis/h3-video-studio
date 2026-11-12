@@ -44,26 +44,44 @@ def main():
     signal.signal(signal.SIGINT, stop)
     try:
         commands = []
+        qwen_command = ["bash", "/usr/local/bin/start-services.sh"]
         if studio:
             commands.append(["/opt/venv/bin/python", "/opt/studio/studio_web.py"])
             commands.append(["/opt/studio-mcp/bin/python", "/opt/studio/studio_mcp.py"])
         if comfy:
             commands.append(["bash", os.environ.get("COMFY_START_SCRIPT", "/start_script.sh")])
         if qwen:
-            commands.append(["bash", "/usr/local/bin/start-services.sh"])
+            commands.append(qwen_command)
         for cmd in commands:
             children.append(subprocess.Popen(cmd, start_new_session=True))
         announced = False
+        qwen_was_ready = False
+        qwen_restarts = 0
         next_probe = time.monotonic()
         while not stopping:
-            for child in children:
+            for index, child in enumerate(children):
                 if child.poll() is not None:
+                    if child.args == qwen_command and qwen_was_ready:
+                        if qwen_restarts < 3:
+                            qwen_restarts += 1
+                            print(f"[qwen] Service exited ({child.returncode}); restarting "
+                                  f"(attempt {qwen_restarts}/3).", flush=True)
+                            children[index] = subprocess.Popen(qwen_command, start_new_session=True)
+                            announced = False
+                            next_probe = time.monotonic()
+                        elif qwen_restarts == 3:
+                            print("[qwen] Restart attempts exhausted. Studio is available to inspect projects.",
+                                  flush=True)
+                            qwen_restarts += 1
+                        continue
                     print(f"Startup service exited: {child.args[1]} ({child.returncode})", flush=True)
                     return 1
             if studio and not announced and time.monotonic() >= next_probe:
                 if studio_ready():
                     print("[studio] Ready to render: Studio, Qwen, and ComfyUI are available.", flush=True)
                     announced = True
+                    qwen_was_ready = True
+                    qwen_restarts = 0
                 next_probe = time.monotonic() + 10
             time.sleep(1)
         return 0
