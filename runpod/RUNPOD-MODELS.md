@@ -8,7 +8,7 @@ The bundled T2V and I2V workflows use the Comfy-Org model by default. Existing p
 
 Choose a render profile and aspect ratio per project. **Automatic** follows the first reference image. The explicit sizes are 1024 × 576 for 16:9 and 576 × 1024 for 9:16.
 
-Choose **Render profile → Custom render settings** to select an installed MiniMax H3 model and the sampling steps. Add up to eight compatible LoRAs with individual strengths from `-2` to `2`. Use the slider or enter an exact value. Studio applies LoRAs in the order shown. Remove all rows to render without a LoRA.
+Choose **Render profile → Custom render settings** to select an installed MiniMax H3 model and the sampling steps. Add up to eight compatible LoRAs with individual strengths from `-4` to `4`. Use the slider or enter an exact value. Studio applies LoRAs in the order shown. Remove all rows to render without a LoRA.
 
 For presets, optionally provide a JSON array in `STUDIO_RENDER_PROFILES`. Use the exact filenames listed in ComfyUI.
 

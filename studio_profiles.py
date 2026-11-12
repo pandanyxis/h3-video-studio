@@ -107,8 +107,8 @@ def parse_loras(value, installed=None):
         name, strength = entry["name"], entry.get("strength")
         if installed is not None and name not in installed:
             raise ValueError("Select an installed LoRA.")
-        if type(strength) not in (int, float) or not -2 <= strength <= 2:
-            raise ValueError("Each LoRA requires a strength from -2 to 2.")
+        if type(strength) not in (int, float) or not -4 <= strength <= 4:
+            raise ValueError("Each LoRA requires a strength from -4 to 4.")
         loras.append((name, float(strength)))
     if len({name for name, _ in loras}) != len(loras):
         raise ValueError("Choose each LoRA only once.")
