@@ -6,7 +6,7 @@ import subprocess
 from tempfile import TemporaryDirectory
 
 from studio_storage import atomic_json, check_cancelled, progress, read_json
-from studio_writer import (DEFAULT_WRITER_PROMPT, REFERENCE_ROLE_INSTRUCTIONS, ask_qwen,
+from studio_writer import (DEFAULT_WRITER_PROMPT, DIALOGUE_INSTRUCTIONS, REFERENCE_ROLE_INSTRUCTIONS, ask_qwen,
                            bind_shot_references, read_reference_notes, referenced_slots,
                            suggest_revision)
 
@@ -97,10 +97,11 @@ def review_before_next_shot(plan, index, clip, pictures, writer_prompt, referenc
             "in the next prompt. Preserve each character's distinguishing features and existing image labels. "
             "If needed, adapt the next "
             "shot's opening and action to what is actually visible so it does not repeat or skip a beat. "
+            "Preserve requested dialogue verbatim and its speaker and language. "
             "Do not infer sound or unobserved actions. Return JSON with observations (brief English evidence), "
             "and prompt (empty string if the current prompt works, otherwise a full English replacement "
             "for the next shot). Rendered frames are review evidence only. "
-            + REFERENCE_ROLE_INSTRUCTIONS + "\n\n" + writer_prompt,
+            + REFERENCE_ROLE_INSTRUCTIONS + DIALOGUE_INSTRUCTIONS + "\n\n" + writer_prompt,
             json.dumps({"story": plan["story"], "previous": previous, "next": upcoming}, ensure_ascii=False),
             pictures, clip_frames=frames, reference_notes=reference_notes, timeout=120,
         )
@@ -257,7 +258,8 @@ def review_film(project, feedback):
             "assessment). For an actionable issue also provide feedback (a concise English explanation of "
             "the change) and prompt (the full replacement English H3 prompt). Otherwise omit feedback and prompt. "
             "Preserve required references, use only image labels found in the plan, and preserve the duration "
-            "and intended beat. Coordinate replacements with adjacent shots so they join naturally.",
+            "and intended beat. Coordinate replacements with adjacent shots so they join naturally. "
+            + DIALOGUE_INSTRUCTIONS,
             json.dumps({"story": plan["story"], "shots": plan["shots"], "feedback": feedback,
                         "transition_reviews": transitions}, ensure_ascii=False),
             [], clip_frames=frames, timeout=240,

@@ -20,6 +20,17 @@ REFERENCE_ROLE_INSTRUCTIONS = (
     "them in the shot description and bind each relevant subject to its location in that @imageN reference. "
     "Apply a location, wardrobe, or style reference only to its assigned role. "
 )
+DIALOGUE_INSTRUCTIONS = (
+    "Use English for production direction and for dialogue you are asked to write, unless another spoken "
+    "language is requested. Copy supplied dialogue verbatim in quotes and preserve its language. "
+    "For each line, name the speaker, place the line at a visible action in the shot, and fit it comfortably "
+    "inside the shot duration. Keep the speaking face and mouth visible for on-screen speech when framing "
+    "allows. Align the start and end of the audible words with that speaker's mouth movements. "
+    "Use one speaker at a time unless overlap is explicitly requested. Keep other mouths at rest and "
+    "keep ambience and music below the voice. Separate requested voice-over from on-screen speech. "
+    "For shots without requested dialogue or narration, specify the relevant ambience and effects only, "
+    "with no speech, crowd chatter, or mouth movements that imply speech. "
+)
 DEFAULT_WRITER_PROMPT = """Write precise English video direction for MiniMax H3. Preserve the user's intent and the planned action. Describe requested visible action directly and literally, without euphemisms or unrelated embellishment.
 
 Describe each shot in time order: the starting pose and placement, the trigger for movement, how the action develops, and the final pose or position. Name the subject of each movement. For important gestures, specify the relevant limb or object, its direction and speed, what it contacts, and when it settles. Where relevant, describe weight shifts, planted feet, grip, gaze, and the physical reaction to contact. Fit the number of actions and their timing to the shot duration.
@@ -137,7 +148,7 @@ def suggest_revision(plan, index, feedback, pictures, writer_prompt, *, clip_fra
         "Revise only the selected English MiniMax H3 video prompt according to the user's feedback. "
         "Keep the shot duration, reference identities and continuity with the adjacent shots. "
         "Return a JSON object with a nonempty string named prompt. Use only supplied @imageN labels. "
-        + REFERENCE_ROLE_INSTRUCTIONS
+        + REFERENCE_ROLE_INSTRUCTIONS + DIALOGUE_INSTRUCTIONS
     )
     if clip_frames:
         instructions += (
@@ -193,6 +204,10 @@ def plan_and_write(story, pictures, project=None, writer_prompt=DEFAULT_WRITER_P
         "its setup, reintroducing the characters, or jumping ahead to an unrelated event. "
         "The cut flag describes how THIS shot starts. Set cut to false for continuous action. "
         "Set it to true for a distinct scene or a hard camera cut called for by the story. "
+        "In sound, record the requested dialogue and narration with their language, speaker and exact words. "
+        "Write new spoken lines in English unless the user requests another language. "
+        "Allow enough time for natural delivery. Split dialogue between complete lines, not within a line. "
+        "When speech is not requested, plan ambience and effects only. "
         "Ground character identity, clothing, objects and locations in the reference images. "
         + REFERENCE_ROLE_INSTRUCTIONS +
         f"For every shot, include a reference_slots array. The only allowed values are: {labels}. "
@@ -252,7 +267,8 @@ def plan_and_write(story, pictures, project=None, writer_prompt=DEFAULT_WRITER_P
         "Use supplied @imageN labels to bind the relevant visual references to subjects. "
         + REFERENCE_ROLE_INSTRUCTIONS +
         "Include every reference_slots entry for this shot with an @ prefix, even if it was used in a previous shot. "
-        "Use only the supplied labels. Follow these writing instructions within that output format:\n\n"
+        "Use only the supplied labels. " + DIALOGUE_INSTRUCTIONS +
+        "Follow these writing instructions within that output format:\n\n"
         + writer_prompt,
         json.dumps({"story": story, "shots": writer_shots}, ensure_ascii=False), pictures, reference_notes=notes,
     )

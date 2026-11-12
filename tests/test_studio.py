@@ -153,6 +153,22 @@ class WriterTests(unittest.TestCase):
         self.assertTrue(call.call_args_list[1].args[0].endswith(instructions))
         self.assertIn("exactly 1 nonempty strings", call.call_args_list[1].args[0])
 
+    def test_writer_preserves_spoken_language_and_aligns_speech_with_the_speaker(self):
+        story = 'Eva zegt in het Nederlands: "Ik kom eraan."'
+        plan = shot_plan(1)
+        plan["shots"][0]["sound"] = 'Eva says in Dutch: "Ik kom eraan."'
+        with patch.object(writer, "ask_qwen", side_effect=[
+            plan, {"prompts": ['Eva from @image17 says in Dutch: "Ik kom eraan."']},
+        ]) as call:
+            writer.plan_and_write(story, [("image17", None)])
+        planner, written = call.call_args_list
+        self.assertIn("Split dialogue between complete lines", planner.args[0])
+        self.assertIn("Write new spoken lines in English", planner.args[0])
+        self.assertIn("Copy supplied dialogue verbatim", written.args[0])
+        self.assertIn("speaker's mouth movements", written.args[0])
+        self.assertEqual(json.loads(written.args[1])["story"], story)
+        self.assertIn("Ik kom eraan.", json.loads(written.args[1])["shots"][0]["sound"])
+
     def test_simple_and_complex_ideas_keep_the_planners_count(self):
         for count in (1, 7):
             with self.subTest(count=count):
