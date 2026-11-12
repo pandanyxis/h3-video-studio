@@ -46,6 +46,7 @@ def main():
         commands = []
         if studio:
             commands.append(["/opt/venv/bin/python", "/opt/studio/studio_web.py"])
+            commands.append(["/opt/studio-mcp/bin/python", "/opt/studio/studio_mcp.py"])
         if comfy:
             commands.append(["bash", os.environ.get("COMFY_START_SCRIPT", "/start_script.sh")])
         if qwen:

@@ -37,6 +37,31 @@ def shot_plan(count=5):
 
 
 class WriterTests(unittest.TestCase):
+    def test_handoff_uses_original_character_reference_and_exact_last_frame(self):
+        plan = shot_plan(2)
+        plan["story"] = "Eva opens the door and walks outside."
+        for shot in plan["shots"]:
+            shot["prompt"] = "Eva from @image17 opens the door."
+        pictures = [("image17", Path("reference-01.png"))]
+        notes = {"reference-01.png": "Eva has short dark hair."}
+        with (
+            patch.object(studio_refine, "clip_duration", return_value=3),
+            patch.object(studio_refine, "extract_review_frame", return_value=True) as extract,
+            patch.object(studio_refine, "ask_qwen", return_value={
+                "observations": "Eva has opened the door.",
+                "prompt": "Eva steps through the open door.",
+            }) as ask,
+        ):
+            review = studio_refine.review_before_next_shot(
+                plan, 1, Path("shot-01.mp4"), pictures, writer.DEFAULT_WRITER_PROMPT, notes,
+            )
+        self.assertEqual(ask.call_args.args[2], pictures)
+        self.assertEqual(ask.call_args.kwargs["reference_notes"], notes)
+        self.assertEqual(json.loads(ask.call_args.args[1])["story"], plan["story"])
+        self.assertTrue(extract.call_args.kwargs["last"])
+        self.assertIn("exact last video frame", ask.call_args.kwargs["clip_frames"][-1][2])
+        self.assertIn("@image17", review["prompt"])
+
     def test_reference_notes_are_attached_to_the_matching_qwen_image(self):
         with tempfile.TemporaryDirectory() as folder:
             first, second = (Path(folder) / name for name in ("reference-01.png", "reference-02.png"))
@@ -243,6 +268,16 @@ class WebTests(unittest.TestCase):
             self.post("/projects/" + identifier + "/resume", {})
         self.assertEqual(error.exception.code, 409)
         error.exception.close()
+
+    def test_cut_preview_uses_rendered_durations(self):
+        project = web.stage({"story": "A boat", "images": [image_data()]})
+        web.atomic_json(project / "shots.json", shot_plan(3))
+        (project / "film.mp4").touch()
+        with patch.object(web, "clip_duration", side_effect=[3.25, 1.5, 5]) as duration:
+            with urlopen(f"{self.url}/projects/{project.name}/cuts/2") as response:
+                self.assertEqual(json.load(response), {"start": 3.25, "end": 6.75})
+        self.assertEqual([call.args[0].name for call in duration.call_args_list],
+                         ["shot-01.mp4", "shot-02.mp4", "shot-03.mp4"])
 
     def test_rejects_cross_origin_and_corrupt_images_without_leaving_project(self):
         with self.assertRaises(HTTPError) as error:
@@ -506,21 +541,45 @@ class ProductionTests(unittest.TestCase):
             client.capabilities.return_value = {"profiles": [{"id": "studio-turbo8", "ready": True}]}
             client.upload.return_value = {"id": "asset"}
             client.create.return_value = {"id": "project", "revision": 1}
-            client.plan.return_value = {"plan_sha256": "hash"}
-            client.render.side_effect = [OSError("response lost"), {"id": "job"}]
+            client.render.side_effect = [OSError("response lost"), *[{"id": i} for i in range(1, 8)]]
             client.download.side_effect = lambda artifact, target: target.write_bytes(b"clip")
             artifacts = [{"kind": "box", "unit_id": f"box:shot-{i:02d}"} for i in range(1, 8)]
 
+            def update_project(project_id, document, expected_revision):
+                boxes = document["timeline"]["boxes"]
+                self.assertEqual(len(boxes), expected_revision + 1)
+                if len(boxes) == 2:
+                    self.assertEqual(boxes[-1]["prompt"], "@image17 boat keeps moving")
+                current = {"revision": expected_revision + 1, "timeline": document["timeline"]}
+                client.project.return_value = current
+                return current
+
+            def render_plan(project_id, request):
+                count = request["expected_revision"]
+                return {"plan_sha256": "hash", "units": [
+                    {"id": artifact["unit_id"], "action": "render" if i == count else "reuse"}
+                    for i, artifact in enumerate(artifacts[:count], 1)
+                ]}
+
             def wait_for_clips(job, on_update):
                 on_update({"state": "queued", "attempts": [
-                    {"state": "verified", "unit_id": "box:shot-01", "artifact": artifacts[0]},
-                    {"state": "pending", "unit_id": "box:shot-02"},
-                ], "progress": {"current": "box:shot-02"}})
-                self.assertEqual((project / "clips" / "shot-01.mp4").read_bytes(), b"clip")
-                self.assertFalse((project / "clips" / "shot-02.mp4").exists())
-                self.assertEqual(read_json(project / "progress.json")["current_shot"], 2)
-                return {"artifacts": artifacts}
+                    {"state": "verified", "unit_id": artifacts[job - 1]["unit_id"],
+                     "artifact": artifacts[job - 1]},
+                ], "progress": {"current": f"box:shot-{job:02d}"}})
+                self.assertTrue((project / "clips" / f"shot-{job:02d}.mp4").is_file())
+                self.assertFalse((project / "clips" / f"shot-{job + 1:02d}.mp4").exists())
+                return {"artifacts": artifacts[:job]}
 
+            def review_next(saved_plan, index, previous_clip, pictures, writer_prompt, reference_notes):
+                self.assertEqual(previous_clip.read_bytes(), b"clip")
+                self.assertEqual(client.render.call_count, index + 1)
+                self.assertEqual(pictures, [("image17", image)])
+                return {"observations": "The boat already started moving.",
+                        "prompt": "@image17 boat keeps moving" if index == 1 else ""}
+
+            client.project.return_value = {"revision": 1}
+            client.update_project.side_effect = update_project
+            client.plan.side_effect = render_plan
             client.wait.side_effect = wait_for_clips
             args = SimpleNamespace(project=project, story=story, references=[image], profile="studio-turbo8", resume=False)
             def export(root, target):
@@ -531,6 +590,7 @@ class ProductionTests(unittest.TestCase):
                 patch.object(run_studio, "qwen_ready", return_value=True),
                 patch.object(run_studio, "plan_and_write", return_value=plan) as planner,
                 patch.object(run_studio.time, "sleep"),
+                patch.object(run_studio, "review_before_next_shot", side_effect=review_next) as handoff,
                 patch.object(studio_refine, "review_transition", side_effect=[
                     OSError("Qwen temporarily unavailable"),
                     *[{"verdict": "pass", "observations": "Consistent", "suggestion": ""}] * 5,
@@ -541,6 +601,9 @@ class ProductionTests(unittest.TestCase):
                     run_studio.produce(args)
                 saved_key = read_json(project / "production.json")["key"]
                 self.assertEqual(run_studio.produce(args).read_bytes(), b"movie")
+                self.assertEqual(handoff.call_count, 6)
+                self.assertEqual(len(client.create.call_args.args[0]["timeline"]["boxes"]), 1)
+                self.assertTrue(read_json(project / "production.json")["handoffs"]["1"]["adjusted"])
                 self.assertEqual(reviewer.call_count, 6)
                 self.assertEqual([path.name for path in reviewer.call_args_list[0].args[:2]],
                                  ["shot-01.mp4", "shot-02.mp4"])
@@ -551,10 +614,10 @@ class ProductionTests(unittest.TestCase):
                                                 writer_prompt=writer.DEFAULT_WRITER_PROMPT)
                 client.create.assert_called_once()
                 self.assertEqual(client.render.call_args_list[0], client.render.call_args_list[1])
-                self.assertEqual(client.render.call_args.args[2], saved_key)
+                self.assertEqual(client.render.call_args_list[1].args[2], saved_key)
                 # A completed project does not submit additional GPU work.
                 self.assertEqual(run_studio.produce(args).read_bytes(), b"movie")
-                self.assertEqual(client.render.call_count, 2)
+                self.assertEqual(client.render.call_count, 8)
 
 
 class DownloadTests(unittest.TestCase):

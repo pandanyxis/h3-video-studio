@@ -233,7 +233,7 @@ summary { cursor:pointer; font-size:13px; font-weight:550; }
         <li data-stage="input"><span class="step-number">1</span><div><strong>Your idea &amp; references</strong><small>Story and reference images</small></div></li>
         <li data-stage="planning"><span class="step-number">2</span><div><strong>Story &amp; Shot Planner</strong><small>Shot count and duration</small></div></li>
         <li data-stage="writing"><span class="step-number">3</span><div><strong>Studio Writer</strong><small>Movement, camera, and sound</small></div></li>
-        <li data-stage="rendering"><span class="step-number">4</span><div><strong>Render clips</strong><small>Continuity across shots</small></div></li>
+        <li data-stage="rendering"><span class="step-number">4</span><div><strong>Render clips</strong><small>Review each clip before the next</small></div></li>
         <li data-stage="reviewing"><span class="step-number">5</span><div><strong>Review transitions</strong><small>Visual continuity between clips</small></div></li>
         <li data-stage="exporting"><span class="step-number">6</span><div><strong>Export MP4</strong><small>Your film and individual clips</small></div></li>
       </ol>
@@ -250,6 +250,7 @@ const labels = {
   queued:'Your project is queued.', preparing:'Studio is waiting for the GPU and models. The first startup can take a while.',
   planning:'Qwen analyzes your idea and reference images to plan the shot count and duration.', writing:'Studio Writer is writing the H3 prompt for each shot.',
   references:'Studio is attaching reference images to the shots.', rendering:'Studio is rendering your clips.',
+  adapting:'Qwen is comparing the rendered clip with the plan for the next shot.',
   reviewing:'Qwen is comparing frames across clip boundaries.',
   exporting:'Studio is preparing the MP4 and individual clips.', done:'Your film is ready.', failed:'Production was interrupted.'
 };
@@ -302,6 +303,38 @@ function transitionReview(index, review) {
     });
     panel.append(suggestion,button);
   }
+  return panel;
+}
+function transitionPlayer(base, index) {
+  const panel = document.createElement('div');
+  panel.className = 'transition-player';
+  const button = document.createElement('button');
+  button.className = 'secondary';
+  button.type = 'button';
+  button.textContent = 'Watch transition from shot ' + index;
+  const status = document.createElement('p');
+  status.setAttribute('role','status');
+  status.hidden = true;
+  button.addEventListener('click', async () => {
+    button.disabled = true;
+    status.hidden = false;
+    status.textContent = 'Finding the transition in the film…';
+    try {
+      const {start, end} = await api(base + '/cuts/' + index);
+      const video = document.createElement('video');
+      video.className = 'shot-video';
+      video.controls = true;
+      video.playsInline = true;
+      video.setAttribute('aria-label','Transition from shot ' + index + ' to shot ' + (index+1));
+      video.src = base + '/film.mp4#t=' + start.toFixed(3) + ',' + end.toFixed(3);
+      panel.replaceChildren(video);
+      video.play().catch(() => {});
+    } catch (error) {
+      status.textContent = error.message;
+      button.disabled = false;
+    }
+  });
+  panel.append(button,status);
   return panel;
 }
 function showFilmReview(project) {
@@ -478,7 +511,7 @@ function refineForm(base, index, video, savedReview) {
   return panel;
 }
 function stepIndex(stage) {
-  return stages.indexOf(stage === 'references' ? 'rendering' : stage);
+  return stages.indexOf(['references','adapting'].includes(stage) ? 'rendering' : stage);
 }
 function pipeline(stage) {
   const index = stepIndex(stage);
@@ -537,6 +570,9 @@ function showProject(project) {
   if (stage === 'rendering' && project.progress.current_shot) {
     description += ' Rendering shot ' + project.progress.current_shot + '.';
   }
+  if (stage === 'adapting') {
+    description += ' Reviewing shot ' + count + ' before rendering shot ' + project.progress.current_shot + '.';
+  }
   if (stage === 'writing' && total) description += ' ' + total + (total === 1 ? ' shot planned.' : ' shots planned.');
   if (stage === 'reviewing') description += ' ' + (project.progress.completed ?? 0) + ' of ' + total + ' transitions checked.';
   if ($('#project-status').textContent !== description) $('#project-status').textContent = description;
@@ -576,7 +612,7 @@ function showProject(project) {
     }));
     state.referenceId = project.id;
   }
-  const signature = JSON.stringify([project.id,project.shots]);
+  const signature = JSON.stringify([project.id,project.shots.map(({prompt, ...shot}) => shot)]);
   const list = $('#shots');
   if (signature !== state.shotSignature) list.replaceChildren();
   state.shotSignature = signature;
@@ -599,6 +635,16 @@ function showProject(project) {
       detail.append(summary,description,prompt);
       list.append(detail);
     }
+    const prompt = detail.querySelector('.shot-prompt');
+    if (prompt.textContent !== shot.prompt) prompt.textContent = shot.prompt;
+    const handoff = project.handoffs?.[i];
+    if (handoff && !detail.querySelector('.handoff-review')) {
+      const note = document.createElement('p');
+      note.className = 'handoff-review';
+      note.textContent = (handoff.adjusted ? 'Prompt adjusted after reviewing shot ' : 'Prompt confirmed after reviewing shot ')
+        + i + '. ' + handoff.observations;
+      detail.querySelector('.shot-prompt').after(note);
+    }
     const filename = 'shot-' + String(i+1).padStart(2,'0') + '.mp4';
     if (!project.clips.includes(filename)) return;
     if (!detail.querySelector('video')) {
@@ -619,6 +665,9 @@ function showProject(project) {
     if (project.can_revise && !detail.querySelector('.refine-panel')) {
       if (project.transitions?.[i]) detail.append(transitionReview(i,project.transitions[i]));
       detail.append(refineForm(base,i,detail.querySelector('video'),project.refinements?.[i]));
+    }
+    if (i && project.status === 'done' && !detail.querySelector('.transition-player')) {
+      detail.append(transitionPlayer(base,i));
     }
     if (project.parent && (project.revised_shots?.includes(i) ?? project.revised_shot === i)
         && !detail.querySelector('.previous-take')) {

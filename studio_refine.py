@@ -6,8 +6,9 @@ import subprocess
 from tempfile import TemporaryDirectory
 
 from studio_storage import atomic_json, check_cancelled, progress, read_json
-from studio_writer import (DEFAULT_WRITER_PROMPT, ask_qwen, bind_shot_references,
-                           read_reference_notes, referenced_slots, suggest_revision)
+from studio_writer import (DEFAULT_WRITER_PROMPT, REFERENCE_ROLE_INSTRUCTIONS, ask_qwen,
+                           bind_shot_references, read_reference_notes, referenced_slots,
+                           suggest_revision)
 
 MAX_FEEDBACK = 4000
 MAX_REVISED_PROMPT = 12000
@@ -69,7 +70,53 @@ def clip_evidence(clip, directory, timestamps=None):
     return frames
 
 
-def review_transition(outgoing, incoming, directory, planned_before, planned_after):
+def review_before_next_shot(plan, index, clip, pictures, writer_prompt, reference_notes):
+    previous, upcoming = plan["shots"][index - 1:index + 1]
+    with TemporaryDirectory() as temporary:
+        directory = Path(temporary)
+        duration = clip_duration(clip)
+        if not math.isfinite(duration) or duration <= 0:
+            raise ValueError("The previous clip duration could not be read.")
+        frames = [
+            (timestamp, frame, "Rendered previous shot")
+            for timestamp, frame in clip_evidence(
+                clip, directory, [duration * fraction for fraction in (0, 0.35, 0.65, 0.85)]
+            )
+        ]
+        last = directory / "last.jpg"
+        if not extract_review_frame(clip, last, last=True):
+            raise ValueError("The last frame of the previous clip could not be read.")
+        frames.append((None, last, "Rendered previous shot: exact last video frame"))
+        result = ask_qwen(
+            "Review the actual previous shot before the next one is rendered. Compare its visible action and "
+            "exact final frame with its planned ending and the next shot's planned opening and H3 prompt. "
+            "Check what already happened, who is present, where they stand, what they are doing or holding, "
+            "and how the movement can continue. Account for deliberate changes of scene, time or angle. "
+            "Keep the next story beat, duration, and cut. Treat the original reference pictures, their notes, "
+            "and the established story as the authority for character identity. Correct visible identity drift "
+            "in the next prompt. Preserve each character's distinguishing features and existing image labels. "
+            "If needed, adapt the next "
+            "shot's opening and action to what is actually visible so it does not repeat or skip a beat. "
+            "Do not infer sound or unobserved actions. Return JSON with observations (brief English evidence), "
+            "and prompt (empty string if the current prompt works, otherwise a full English replacement "
+            "for the next shot). Rendered frames are review evidence only. "
+            + REFERENCE_ROLE_INSTRUCTIONS + "\n\n" + writer_prompt,
+            json.dumps({"story": plan["story"], "previous": previous, "next": upcoming}, ensure_ascii=False),
+            pictures, clip_frames=frames, reference_notes=reference_notes, timeout=120,
+        )
+    if (not isinstance(result, dict) or not isinstance(result.get("observations"), str)
+            or not result["observations"].strip() or not isinstance(result.get("prompt"), str)):
+        raise ValueError("Qwen returned an invalid review for the next shot.")
+    prompt = result["prompt"].strip()
+    if prompt:
+        prompt = bind_shot_references(prompt, upcoming, {slot for slot, _ in pictures},
+                                      existing=referenced_slots(upcoming["prompt"]))
+        if len(prompt) > MAX_REVISED_PROMPT:
+            raise ValueError("The adjusted prompt is too long.")
+    return {"observations": result["observations"].strip()[:1000], "prompt": prompt}
+
+
+def review_transition(outgoing, incoming, directory, planned_before, planned_after, *, story=""):
     frames = []
     for clip, label, at_end in ((outgoing, "Outgoing shot", True), (incoming, "Incoming shot", False)):
         duration = clip_duration(clip)
@@ -106,14 +153,16 @@ def review_transition(outgoing, incoming, directory, planned_before, planned_aft
         "at the start of the next shot without explanation. Compare visible garments, layers and accessories "
         "for each person. Flag clothing that suddenly "
         "appears, disappears or changes during continuous action, allowing for framing and occlusion. "
-        "Also check identity, lighting and object placement when relevant. Use the planned actions and "
+        "Also check identity, lighting and object placement when relevant. Compare the visible handoff with "
+        "the story, planned ending and opening, and the final written prompts. Check whether the cut repeats "
+        "or skips a visible story beat. Use the planned actions and "
         "deliberate_cut flag to judge the intended transition. A new camera angle alone does not explain a "
         "wardrobe change. An explicit clothing change or time jump may explain it. Use only visible evidence "
         "and state uncertainty when the frames are insufficient. "
         "Return JSON with verdict (pass, needs_attention or uncertain), "
         "observations (one or two short English sentences), and suggestion (a short, specific English note "
         "for refining the incoming shot if needed, otherwise an empty string).",
-        json.dumps({"outgoing_action": planned_before["action"], "incoming_action": planned_after["action"],
+        json.dumps({"story": story, "outgoing": planned_before, "incoming": planned_after,
                     "deliberate_cut": planned_after.get("cut", False)}, ensure_ascii=False),
         [], clip_frames=frames, timeout=60,
     )
@@ -124,7 +173,7 @@ def review_transition(outgoing, incoming, directory, planned_before, planned_aft
     return {key: result[key].strip()[:1000] for key in ("verdict", "observations", "suggestion")}
 
 
-def review_transitions(project, shots):
+def review_transitions(project, shots, *, story=""):
     report = project / "transitions.json"
     reviews = read_json(report) if report.is_file() else {}
     for index in range(1, len(shots)):
@@ -137,7 +186,7 @@ def review_transitions(project, shots):
                 result = review_transition(
                     project / "clips" / f"shot-{index:02d}.mp4",
                     project / "clips" / f"shot-{index + 1:02d}.mp4",
-                    Path(temporary), shots[index - 1], shots[index],
+                    Path(temporary), shots[index - 1], shots[index], story=story,
                 )
         except (OSError, RuntimeError, ValueError, LookupError, subprocess.SubprocessError) as error:
             print(f"Transition into shot {index + 1} could not be reviewed: {error}", flush=True)

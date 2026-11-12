@@ -7,6 +7,7 @@ import hmac
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from io import BytesIO
 import json
+import math
 import os
 from pathlib import Path
 import re
@@ -21,7 +22,8 @@ from PIL import Image, UnidentifiedImageError
 
 from prepare_timeline import ASPECT_SIZES, FPS
 from studio_profiles import MAX_LORAS, SELECTION_PREFIX, default_settings, selection_profile
-from studio_refine import MAX_FEEDBACK, MAX_REVISED_PROMPT, refine_clip, review_film, revision_inputs
+from studio_refine import (MAX_FEEDBACK, MAX_REVISED_PROMPT, clip_duration, refine_clip,
+                           review_film, revision_inputs)
 from studio_render import RenderClient, RenderError
 from studio_storage import atomic_json, gpu_lock, progress, read_json
 from studio_writer import (DEFAULT_WRITER_PROMPT, MAX_REFERENCE_NOTE, MAX_WRITER_PROMPT,
@@ -271,6 +273,8 @@ def project_data(project, details=False):
         result["film_review"] = read_json(film_review) if film_review.is_file() else None
         transitions = project / "transitions.json"
         result["transitions"] = read_json(transitions) if transitions.is_file() else {}
+        production = project / "production.json"
+        result["handoffs"] = read_json(production).get("handoffs", {}) if production.is_file() else {}
         result["story"] = (project / "story.txt").read_text(encoding="utf-8")
         result["references"] = [path.name for path in sorted(project.glob("reference-*"))]
         result["image_notes"] = read_reference_notes(project)
@@ -474,12 +478,28 @@ class StudioHandler(BaseHTTPRequestHandler):
         if self.path == "/projects":
             projects = [project_data(project) for project in managed_projects()]
             return self.json(200, projects=sorted(projects, key=lambda item: item.get("created", ""), reverse=True))
-        match = re.fullmatch(r"/projects/([a-f0-9]{32})(?:/(film\.mp4|shots\.json|render\.log|reference-\d{2}\.(?:png|jpg|webp)|clips/shot-\d{2}\.mp4))?", self.path)
+        match = re.fullmatch(r"/projects/([a-f0-9]{32})(?:/(film\.mp4|shots\.json|render\.log|reference-\d{2}\.(?:png|jpg|webp)|clips/shot-\d{2}\.mp4|cuts/(\d{1,2})))?", self.path)
         if not match:
             return self.json(404, error="Project not found.")
         project = ROOT / match[1]
         if not (project / "status").is_file():
             return self.json(404, error="Project not found.")
+        if match[3]:
+            index = int(match[3])
+            shots = project / "shots.json"
+            if (not (project / "film.mp4").is_file() or not shots.is_file()
+                    or not 1 <= index < len(read_json(shots)["shots"])):
+                return self.json(404, error="This transition is not available yet.")
+            try:
+                durations = [clip_duration(project / "clips" / f"shot-{number:02d}.mp4")
+                             for number in range(1, index + 2)]
+                if any(not math.isfinite(duration) or duration <= 0 for duration in durations):
+                    raise ValueError("Invalid clip duration")
+            except (OSError, ValueError, subprocess.SubprocessError):
+                return self.json(503, error="Studio could not find this transition in the film.")
+            boundary = sum(durations[:-1])
+            return self.json(200, start=boundary - min(2, durations[-2]),
+                             end=boundary + min(2, durations[-1]))
         if match[2]:
             path = project / match[2]
             if not path.is_file():
