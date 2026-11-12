@@ -2,6 +2,7 @@
 import base64
 from io import BytesIO
 import hashlib
+from http.client import RemoteDisconnected
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 from pathlib import Path
@@ -590,6 +591,8 @@ class ProductionTests(unittest.TestCase):
                 self.assertEqual(previous_clip.read_bytes(), b"clip")
                 self.assertEqual(client.render.call_count, index + 1)
                 self.assertEqual(pictures, [("image17", image)])
+                if handoff.call_count == 1:
+                    raise RemoteDisconnected("Remote end closed connection without response")
                 return {"observations": "The boat already started moving.",
                         "prompt": "@image17 boat keeps moving" if index == 1 else ""}
 
@@ -617,7 +620,7 @@ class ProductionTests(unittest.TestCase):
                     run_studio.produce(args)
                 saved_key = read_json(project / "production.json")["key"]
                 self.assertEqual(run_studio.produce(args).read_bytes(), b"movie")
-                self.assertEqual(handoff.call_count, 6)
+                self.assertEqual([call.args[1] for call in handoff.call_args_list], [1, 1, 2, 3, 4, 5, 6])
                 self.assertEqual(len(client.create.call_args.args[0]["timeline"]["boxes"]), 1)
                 self.assertTrue(read_json(project / "production.json")["handoffs"]["1"]["adjusted"])
                 self.assertEqual(reviewer.call_count, 6)

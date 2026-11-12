@@ -6,6 +6,7 @@ import subprocess
 import time
 import uuid
 from pathlib import Path
+from urllib.error import HTTPError, URLError
 
 from export_project import export_project
 from prepare_timeline import ASPECT_SIZES, timeline_document
@@ -168,10 +169,23 @@ def render_with_reviews(client, args, project, state, receipt, clips):
         if index and str(index) not in state["handoffs"]:
             progress(project, "adapting", completed=index, total=len(boxes), current_shot=index + 1)
             try:
-                review = review_before_next_shot(
-                    plan, index, clips / f"{boxes[index - 1]['id']}.mp4",
-                    pictures, writer_prompt, reference_notes,
-                )
+                for retry_delay in (5, 15, None):
+                    try:
+                        review = review_before_next_shot(
+                            plan, index, clips / f"{boxes[index - 1]['id']}.mp4",
+                            pictures, writer_prompt, reference_notes,
+                        )
+                        break
+                    except (ConnectionError, TimeoutError, URLError) as error:
+                        if retry_delay is None or (
+                            isinstance(error, HTTPError) and error.code not in (429, 500, 502, 503, 504)
+                        ):
+                            raise
+                        check_cancelled(project)
+                        print(f"Review of shot {index} lost its Qwen connection. "
+                              f"Retrying in {retry_delay} seconds: {error}", flush=True)
+                        time.sleep(retry_delay)
+                        check_cancelled(project)
             except (OSError, RuntimeError, ValueError, subprocess.SubprocessError) as error:
                 raise RuntimeError(
                     f"Could not review shot {index} before rendering shot {index + 1}. "
