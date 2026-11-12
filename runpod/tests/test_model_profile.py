@@ -20,7 +20,7 @@ def load(name):
 
 class ModelProfileTests(unittest.TestCase):
     def test_lora_stack_links_ui_and_api_in_order(self):
-        for loras in ([], [('turbo', 0.8)], [('turbo', 0.8), ('style', 0.5), ('motion', 0.3)]):
+        for loras in ([], [('turbo', -0.8)], [('turbo', 0.8), ('style', -0.5), ('motion', 0.3)]):
             with self.subTest(loras=loras):
                 workflow = {
                     'api': {
@@ -38,7 +38,8 @@ class ModelProfileTests(unittest.TestCase):
                         'links': [[15, 104, 0, 106, 0, 'MODEL'], [1, 106, 0, 107, 0, 'MODEL']],
                     },
                 }
-                set_lora_stack(workflow, loras)
+                set_lora_stack(workflow, parse_loras([{'name': name, 'strength': strength}
+                                                     for name, strength in loras]))
                 api, ui = workflow['api'], workflow['ui']
                 nodes = {node['id']: node for node in ui['nodes']}
                 self.assertEqual(set(api), {str(node) for node in nodes})
@@ -59,6 +60,8 @@ class ModelProfileTests(unittest.TestCase):
             parse_loras([chosen, chosen], ['turbo'])
         with self.assertRaisesRegex(ValueError, 'installed'):
             parse_loras([chosen], ['style'])
+        with self.assertRaisesRegex(ValueError, 'strength from -2 to 2'):
+            parse_loras([{'name': 'style', 'strength': -2.01}], ['style'])
 
     def test_loaders_match_exact_pinned_files(self):
         models = json.loads((ROOT / 'civitai-models.json').read_text())

@@ -56,6 +56,7 @@ select,input[type=number] { width:100%; border:1px solid #3a485c; border-radius:
 .lora-stack { display:grid; gap:8px; }
 .lora-row { display:grid; grid-template-columns:minmax(0,1fr) 100px auto; gap:8px; align-items:end; }
 .lora-row label { display:grid; gap:4px; min-width:0; }
+.lora-slider { grid-column:1 / -1; width:100%; margin:0; accent-color:var(--accent); }
 @media(max-width:550px) { .lora-row { grid-template-columns:minmax(0,1fr) 90px; } }
 .writer-settings { padding:12px 14px; border:1px solid var(--line); border-radius:8px; }
 .writer-settings summary { cursor:pointer; font-weight:600; }
@@ -162,8 +163,9 @@ summary { cursor:pointer; font-size:13px; font-weight:550; }
             <template id="lora-row-template">
               <div class="lora-row">
                 <label>LoRA <select class="lora-name" required></select></label>
-                <label>Strength <input class="lora-strength" type="number" min="0" max="2" step="any" required></label>
+                <label>Strength <input class="lora-strength" type="number" min="-2" max="2" step="any" required></label>
                 <button type="button" class="secondary remove-lora">Remove</button>
+                <input class="lora-slider" type="range" step="0.01" aria-label="Adjust LoRA strength">
               </div>
             </template>
             <button id="add-lora" type="button" class="secondary">Add LoRA</button>
@@ -776,7 +778,16 @@ function addLoraRow({name = '', strength = 0.8} = {}) {
   const select = row.querySelector('.lora-name');
   select.replaceChildren(new Option('Select a LoRA', ''), ...loraOptions.map(file => new Option(file, file)));
   select.value = loraOptions.includes(name) ? name : '';
-  row.querySelector('.lora-strength').value = Number.isFinite(strength) ? strength : '';
+  const strengthField = row.querySelector('.lora-strength');
+  const slider = row.querySelector('.lora-slider');
+  slider.min = strengthField.min;
+  slider.max = strengthField.max;
+  strengthField.value = Number.isFinite(strength) ? strength : '';
+  slider.value = strengthField.value || '0';
+  slider.addEventListener('input', () => { strengthField.value = slider.value; });
+  strengthField.addEventListener('input', () => {
+    if (strengthField.validity.valid) slider.value = strengthField.value;
+  });
   row.querySelector('.remove-lora').addEventListener('click', () => {
     row.remove();
     add.disabled = false;
