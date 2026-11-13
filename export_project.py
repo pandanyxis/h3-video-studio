@@ -7,15 +7,12 @@ import shutil
 import subprocess
 import tempfile
 
-from plan_story import MAX_SHOTS
-
-
 def export_project(project, output):
     project = project.resolve()
     plan = json.loads((project / "shots.json").read_text(encoding="utf-8"))
     count = len(plan["shots"])
-    if not 1 <= count <= MAX_SHOTS:
-        raise ValueError(f"Expected a plan with 1 to {MAX_SHOTS} shots")
+    if count < 1:
+        raise ValueError("Expected a plan with at least one shot")
     names = [f"shot-{index:02d}.mp4" for index in range(1, count + 1)]
     for name in names:
         clip = project / "clips" / name

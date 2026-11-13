@@ -256,7 +256,7 @@ def render_shots(client, args, project, state, receipt, clips, document, *, comp
             for attempt in job.get("attempts", []):
                 unit = attempt["unit_id"]
                 artifact = attempt.get("artifact")
-                if (attempt["state"] != "verified" or not re.fullmatch(r"box:shot-\d{2}", unit)
+                if (attempt["state"] != "verified" or not re.fullmatch(r"box:shot-\d{2,}", unit)
                         or not artifact or artifact.get("unit_id") != unit):
                     continue
                 box = unit.split(":")[1]
@@ -268,7 +268,7 @@ def render_shots(client, args, project, state, receipt, clips, document, *, comp
                 except (OSError, RenderError) as error:
                     print(f"Preview for {box} is temporarily unavailable: {error}", flush=True)
         current = (job.get("progress") or {}).get("current") or ""
-        match = re.fullmatch(r"box:shot-(\d{2})", current)
+        match = re.fullmatch(r"box:shot-(\d{2,})", current)
         finished = len(list(clips.glob("shot-*.mp4")))
         progress(project, "rendering", completed=finished, total=total,
                  current_shot=int(match[1]) if match else None)

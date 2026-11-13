@@ -282,8 +282,7 @@ def plan_and_write(story, pictures, project=None, writer_prompt=DEFAULT_WRITER_P
             plan = None
             retry_instruction = (
                 f" The previous plan failed validation: {error}. "
-                "Return a complete corrected plan for the entire story. "
-                "If there were too many shots, combine compatible beats while preserving pacing and the ending."
+                "Return a complete corrected plan for the entire story."
             )
         else:
             break

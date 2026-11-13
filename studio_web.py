@@ -501,7 +501,7 @@ class StudioHandler(BaseHTTPRequestHandler):
         if self.path == "/projects":
             projects = [project_data(project) for project in managed_projects()]
             return self.json(200, projects=sorted(projects, key=lambda item: item.get("created", ""), reverse=True))
-        match = re.fullmatch(r"/projects/([a-f0-9]{32})(?:/(film\.mp4|shots\.json|render\.log|reference-\d{2}\.(?:png|jpg|webp)|clips/shot-\d{2}\.mp4|cuts/(\d{1,2})))?", self.path)
+        match = re.fullmatch(r"/projects/([a-f0-9]{32})(?:/(film\.mp4|shots\.json|render\.log|reference-\d{2}\.(?:png|jpg|webp)|clips/shot-\d{2,}\.mp4|cuts/(\d+)))?", self.path)
         if not match:
             return self.json(404, error="Project not found.")
         project = ROOT / match[1]

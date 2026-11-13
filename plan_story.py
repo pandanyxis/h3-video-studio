@@ -5,7 +5,6 @@ import os
 from pathlib import Path
 from urllib.request import Request, urlopen
 
-MAX_SHOTS = 20
 MAX_SHOT_SECONDS = 15
 SHOT_FIELDS = ("action", "camera", "sound", "start", "end")
 PARAGRAPH_GUIDANCE = (
@@ -64,7 +63,7 @@ def shot_count_instruction(count=None):
     if count is not None:
         return f"Plan exactly {count} consecutive shots for the supplied idea or story. "
     return (
-        f"Plan 1 to {MAX_SHOTS} shots that fully tell the story at a natural pace. "
+        "Plan as many shots as needed that fully tell the story at a natural pace. "
         "Estimate how long movement, dialogue, and reactions take before deciding what fits in each shot. "
         "Allow time for actions to start, develop, and settle, and for any meaningful pause or response. "
         f"Prefer a longer clip up to {MAX_SHOT_SECONDS} seconds when the action needs room to unfold. "
@@ -77,8 +76,8 @@ def shot_count_instruction(count=None):
 
 def validate_plan(plan, count=None, *, require_duration=False):
     shots = plan.get("shots") if isinstance(plan, dict) else None
-    if not isinstance(shots, list) or not 1 <= len(shots) <= MAX_SHOTS:
-        raise ValueError(f"Expected a plan with 1 to {MAX_SHOTS} shots")
+    if not isinstance(shots, list) or not shots:
+        raise ValueError("Expected a plan with at least one shot")
     if count is not None and len(shots) != count:
         raise ValueError(f"Expected exactly {count} shots")
     for index, shot in enumerate(shots, 1):
@@ -100,11 +99,13 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("story", type=Path)
     parser.add_argument("output", type=Path)
-    parser.add_argument("--shots", type=int, choices=range(1, MAX_SHOTS + 1),
+    parser.add_argument("--shots", type=int,
                         help="Override the automatic shot count")
     parser.add_argument("--endpoint", default="http://127.0.0.1:8080/v1")
     parser.add_argument("--model", default="qwen-hauhau")
     args = parser.parse_args()
+    if args.shots is not None and args.shots < 1:
+        parser.error("--shots must be positive")
 
     story = args.story.read_text(encoding="utf-8-sig").strip()
     if not story:
