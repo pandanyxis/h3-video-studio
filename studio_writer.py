@@ -7,7 +7,9 @@ from pathlib import Path
 import re
 from urllib.request import Request, urlopen
 
-from plan_story import EFFECT_GUIDANCE, MAX_SHOT_SECONDS, PARAGRAPH_GUIDANCE, shot_count_instruction, validate_plan
+from plan_story import (
+    EFFECT_GUIDANCE, MAX_SHOT_SECONDS, PARAGRAPH_GUIDANCE, WARDROBE_GUIDANCE, shot_count_instruction, validate_plan,
+)
 from studio_storage import atomic_json, check_cancelled, progress, read_json
 
 
@@ -37,6 +39,10 @@ H3_CLIP_GUIDANCE = (
     "and non_diegetic_music. Begin the description with [Shot 1], the visual style, and the opening "
     "composition. Describe camera moves in natural English alongside the action. Preserve every planned "
     "visual effect at its point in the sequence, including its trigger, development, and visible result. "
+    "In the clip description, establish each visible character's relevant wardrobe from the planned "
+    "opening state, describe any planned clothing action in order, and reach the planned closing wardrobe. "
+    "State the current garment position and condition explicitly even after a cut. Apply reference "
+    "wardrobe only where it matches that state. Keep other identity cues from the reference. "
     "Place synchronized sounds at the action that produces them. Use stable speaker IDs such as (S1) "
     "outside dialogue tags. Summarize ambience and physical sounds in overall_soundscape, and describe "
     "background music in non_diegetic_music or specify none when the clip has no music. "
@@ -202,7 +208,7 @@ def plan_and_write(story, pictures, project=None, writer_prompt=DEFAULT_WRITER_P
     planner_instructions = (
         "You are Studio's story and shot planner. The user supplies a rough shot idea "
         "or a story, not technical video prompts. " + shot_count_instruction() + PARAGRAPH_GUIDANCE +
-        EFFECT_GUIDANCE +
+        EFFECT_GUIDANCE + WARDROBE_GUIDANCE +
         "Return only a JSON object with a shots array in story order. "
         "Each shot needs nonempty action, camera, sound, start and end strings. "
         "Use one or two concise sentences per field. "

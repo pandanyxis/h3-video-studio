@@ -24,6 +24,15 @@ EFFECT_GUIDANCE = (
     "Record any intended accompanying sound in the sound field and carry visible effects through "
     "the opening and closing states when they continue across shots. "
 )
+WARDROBE_GUIDANCE = (
+    "Record explicit clothing actions in action, naming the character, garment, and visible change. "
+    "In start and end, state the relevant wardrobe for each visible character, including garment "
+    "position and condition, layers, footwear, and accessories when relevant. Track each change "
+    "forward through later shots, including after camera cuts or when a character returns to frame. "
+    "Keep garments that stay on, and preserve changes such as an opened coat, rolled sleeves, "
+    "or a torn jacket until a later story event changes them. Use reference images as the wardrobe "
+    "baseline where applicable, then follow the wardrobe established by the story. "
+)
 
 
 def shot_count_instruction(count=None):
@@ -82,7 +91,7 @@ def main():
         "model": args.model,
         "messages": [
             {"role": "system", "content": (
-                shot_count_instruction(args.shots) + PARAGRAPH_GUIDANCE + EFFECT_GUIDANCE +
+                shot_count_instruction(args.shots) + PARAGRAPH_GUIDANCE + EFFECT_GUIDANCE + WARDROBE_GUIDANCE +
                 "Return only a JSON object with a shots array. Each shot must contain "
                 "nonempty strings: action, camera, sound, start, end. "
                 "Preserve character, clothing and setting details across connected shots. "

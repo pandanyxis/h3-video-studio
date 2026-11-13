@@ -23,7 +23,10 @@ aside { padding:28px 20px; border-right:1px solid var(--line); background:#10172
 .primary,.secondary,.download { display:inline-block; border:1px solid transparent; padding:11px 18px; border-radius:8px; font-weight:650; text-decoration:none; }
 .primary,.download { background:var(--accent); color:#12281d; }
 .secondary { background:#1b2533; border-color:#38465a; color:#e9eef6; }
-#new-project { width:100%; text-align:left; margin-bottom:28px; }
+#new-project,#settings-link { width:100%; text-align:left; }
+#new-project { margin-bottom:8px; }
+#settings-link { margin-bottom:28px; }
+#settings-link[aria-current="page"] { border-color:var(--accent); }
 #projects { display:grid; gap:8px; margin-top:12px; }
 .project-link { display:block; padding:11px 12px; color:inherit; text-decoration:none; border-radius:8px; border:1px solid transparent; overflow-wrap:anywhere; }
 .project-link:hover,.project-link[aria-current="page"] { background:#1a2634; border-color:#344a40; }
@@ -120,6 +123,7 @@ summary { cursor:pointer; font-size:13px; font-weight:550; }
 <aside aria-label="Projects">
   <div class="brand"><span class="mark" aria-hidden="true">H3</span> Video Studio</div>
   <button id="new-project" class="secondary" type="button">＋ New project</button>
+  <a id="settings-link" class="secondary" href="#settings">Settings</a>
   <div class="eyebrow sidebar-label">Your projects</div>
   <nav id="projects" aria-label="Saved projects"><p class="empty">Your projects will appear here.</p></nav>
   <div class="actions">
@@ -140,17 +144,18 @@ summary { cursor:pointer; font-size:13px; font-weight:550; }
           <label for="story">Shot idea or story</label>
           <textarea id="story" required maxlength="20000" aria-describedby="story-help" placeholder="For example, a woman opens her seaside café. She brews coffee, discovers a letter, and looks outside…"></textarea>
           <p class="hint" id="story-help">You can type or paste multiple paragraphs. Leave a blank line between paragraphs to help Studio spot changes in focus when planning shots.</p>
-          <details class="writer-settings" id="writer-settings">
-            <summary>Prompt Writer settings</summary>
-            <label for="writer-prompt">Writing instructions for this project</label>
-            <textarea id="writer-prompt" aria-describedby="writer-help"></textarea>
-            <span id="writer-help" class="hint">Leave blank to use the default instructions.</span>
-            <button id="reset-writer" type="button" class="secondary">Restore default instructions</button>
-          </details>
           <label for="images">Reference images</label>
           <span class="hint" id="limits">Characters, locations, or objects. Add 1–9 images, up to 8 MiB each.</span>
           <input id="images" type="file" multiple required accept="image/png,image/jpeg,image/webp" aria-describedby="limits">
           <div class="reference-fields" id="previews"></div>
+          <div id="film-settings">
+          <details class="writer-settings" id="writer-settings">
+            <summary>Prompt Writer settings</summary>
+            <label for="writer-prompt">Writing instructions</label>
+            <textarea id="writer-prompt" aria-describedby="writer-help"></textarea>
+            <span id="writer-help" class="hint">Leave blank to use the default instructions.</span>
+            <button id="reset-writer" type="button" class="secondary">Restore default instructions</button>
+          </details>
           <label for="profile">Render profile</label>
           <select id="profile">
             <option value="studio-turbo8">Studio H3 Turbo 8-step</option>
@@ -185,9 +190,18 @@ summary { cursor:pointer; font-size:13px; font-weight:550; }
             <option value="16:9">16:9 · Landscape</option>
             <option value="9:16">9:16 · Portrait</option>
           </select>
+          </div>
           <span class="hint">Studio plans the shot count from your story. Each clip lasts up to 15 seconds.</span>
           <button id="submit" class="primary">Make my film <span aria-hidden="true">↗</span></button>
         </form>
+      </section>
+      <section class="panel" id="settings-panel" aria-label="Film defaults" hidden>
+        <div id="default-settings-fields"></div>
+        <div class="actions">
+          <button id="save-film-defaults" type="button" class="primary">Save defaults</button>
+          <button id="clear-film-defaults" type="button" class="secondary" disabled>Clear saved defaults</button>
+        </div>
+        <p id="film-defaults-status" class="hint" role="status"></p>
       </section>
       <section class="panel" id="project-panel" hidden aria-label="Video project">
         <div class="project-progress" role="status" aria-live="polite">
@@ -717,11 +731,13 @@ function navigate() {
   $('#film').pause();
   $('#film').removeAttribute('src');
   $('#film').load();
-  $('#input-panel').hidden = Boolean(state.id);
+  const settings = location.hash === '#settings';
+  showSettingsPage(settings);
+  $('#input-panel').hidden = Boolean(state.id) || settings;
   $('#project-panel').hidden = !state.id;
   $('#project-step').textContent = 'Loading project status…';
   $('#project-status').textContent = '';
-  $('#intro').hidden = Boolean(state.id);
+  $('#intro').hidden = Boolean(state.id) || settings;
   $('#shots-section').hidden = true;
   $('#project-output').hidden = true;
   $('#render-preview').hidden = true;
@@ -729,8 +745,8 @@ function navigate() {
   $('#resume').hidden = true;
   $('#cancel-project').hidden = true;
   $('#log').hidden = true;
-  $('#page-label').textContent = state.id ? 'Your project' : 'New project';
-  $('#heading').textContent = state.id ? 'Opening project…' : 'What story do you want to tell?';
+  $('#page-label').textContent = settings ? 'Settings' : state.id ? 'Your project' : 'New project';
+  $('#heading').textContent = settings ? 'Film defaults' : state.id ? 'Opening project…' : 'What story do you want to tell?';
   state.referenceId = null;
   state.shotSignature = null;
   pipeline('input');
@@ -768,6 +784,11 @@ $('#images').addEventListener('change', () => {
 });
 let loraOptions;
 let maxLoras;
+let pendingRenderDefaults;
+const filmDefaultsKey = 'h3-studio.film-defaults';
+let filmDefaults;
+try { filmDefaults = JSON.parse(localStorage.getItem(filmDefaultsKey)); } catch {}
+$('#clear-film-defaults').disabled = !filmDefaults;
 function readLoraRows() {
   return [...$('#render-loras').children].map(row => ({
     name:row.querySelector('.lora-name').value,
@@ -814,22 +835,28 @@ async function loadRenderOptions() {
   try {
     const {models, loras, defaults, max_loras} = await api('/render-options');
     const model = $('#render-model');
-    const current = model.value;
+    const restored = pendingRenderDefaults;
+    const current = restored?.model ?? model.value;
     model.replaceChildren(new Option('Select a model', ''), ...models.map(name => new Option(name, name)));
-    model.value = models.includes(current) ? current : models.includes(defaults.model) ? defaults.model : '';
+    model.value = models.includes(current) ? current :
+      !restored && models.includes(defaults.model) ? defaults.model : '';
     if (!models.length) {
       status.textContent = 'No model is available yet.';
       return;
     }
-    const selected = loraOptions ? readLoraRows() : loras.includes(defaults.lora)
-      ? [{name:defaults.lora, strength:defaults.lora_strength}] : [];
+    const selected = restored?.loras ?? (loraOptions ? readLoraRows() : loras.includes(defaults.lora)
+      ? [{name:defaults.lora, strength:defaults.lora_strength}] : []);
     loraOptions = loras;
     maxLoras = max_loras;
     $('#render-loras').replaceChildren();
     $('#add-lora').disabled = !loras.length;
     selected.forEach(addLoraRow);
+    pendingRenderDefaults = undefined;
     fieldset.disabled = $('#profile').value !== 'own-settings';
-    status.textContent = loras.length ? 'Choose LoRAs compatible with the selected model.' : 'No LoRAs are installed.';
+    const unavailable = restored && (!model.value || selected.length > maxLoras ||
+      selected.some(lora => !loras.includes(lora.name)));
+    status.textContent = unavailable ? 'Some saved models or LoRAs are unavailable. Review the custom settings.' :
+      loras.length ? 'Choose LoRAs compatible with the selected model.' : 'No LoRAs are installed.';
   } catch (error) { status.textContent = error.message; }
   finally { reload.disabled = false; }
 }
@@ -858,6 +885,78 @@ $('#writer-settings').addEventListener('toggle', () => {
   if ($('#writer-settings').open && !$('#writer-prompt').value) loadWriterPrompt();
 });
 $('#reset-writer').addEventListener('click', () => loadWriterPrompt({reset:true}));
+function readRenderSettings() {
+  return {model:$('#render-model').value, loras:readLoraRows(), steps:$('#render-steps').valueAsNumber};
+}
+function readFilmSettings() {
+  return {
+    profile:$('#profile').value, aspect:$('#aspect').value, writerPrompt:$('#writer-prompt').value,
+    renderSettings:pendingRenderDefaults ?? readRenderSettings()
+  };
+}
+function applyFilmDefaults(settings = filmDefaults) {
+  const profile = $('#profile');
+  const selectedProfile = settings?.profile;
+  profile.value = [...profile.options].some(option => option.value === selectedProfile)
+    ? selectedProfile : profile.options[0].value;
+  $('#aspect').value = settings?.aspect ?? 'auto';
+  $('#writer-prompt').value = settings?.writerPrompt ?? '';
+  pendingRenderDefaults = settings?.renderSettings ?? undefined;
+  $('#render-steps').value = pendingRenderDefaults?.steps ?? 8;
+  loraOptions = undefined;
+  $('#render-model').replaceChildren();
+  $('#render-loras').replaceChildren();
+  showRenderSettings();
+}
+let draftFilmSettings;
+function showSettingsPage(open) {
+  const panel = $('#settings-panel');
+  if (open === !panel.hidden) return;
+  panel.hidden = !open;
+  if (open) $('#settings-link').setAttribute('aria-current', 'page');
+  else $('#settings-link').removeAttribute('aria-current');
+  const fields = $('#film-settings');
+  if (open) {
+    draftFilmSettings = readFilmSettings();
+    $('#default-settings-fields').append(fields);
+    $('#film-defaults-status').textContent = 'Defaults for new films in this browser.';
+    applyFilmDefaults();
+  } else {
+    $('#create-form').insertBefore(fields, $('#submit').previousElementSibling);
+    applyFilmDefaults(draftFilmSettings);
+    if ($('#writer-settings').open && !$('#writer-prompt').value) loadWriterPrompt();
+    draftFilmSettings = undefined;
+  }
+}
+$('#save-film-defaults').addEventListener('click', () => {
+  const status = $('#film-defaults-status');
+  const profile = $('#profile').value;
+  const custom = profile === 'own-settings';
+  if (custom && $('#render-settings').disabled) {
+    status.textContent = 'Wait for Studio to load the models and LoRAs.';
+    return;
+  }
+  if (custom && [...$('#render-settings').querySelectorAll('select, input[type="number"]')]
+    .some(field => !field.reportValidity())) return;
+  const settings = readFilmSettings();
+  if (!custom) settings.renderSettings = null;
+  try {
+    localStorage.setItem(filmDefaultsKey, JSON.stringify(settings));
+    filmDefaults = settings;
+    $('#clear-film-defaults').disabled = false;
+    status.textContent = 'Defaults saved for new films in this browser.';
+  } catch { status.textContent = 'This browser could not save your film defaults.'; }
+});
+$('#clear-film-defaults').addEventListener('click', () => {
+  const status = $('#film-defaults-status');
+  try {
+    localStorage.removeItem(filmDefaultsKey);
+    filmDefaults = undefined;
+    $('#clear-film-defaults').disabled = true;
+    applyFilmDefaults();
+    status.textContent = 'Saved defaults cleared.';
+  } catch { status.textContent = 'This browser could not clear your film defaults.'; }
+});
 $('#create-form').addEventListener('submit',async event => {
   event.preventDefault();
   const custom = $('#profile').value === 'own-settings';
@@ -873,10 +972,7 @@ $('#create-form').addEventListener('submit',async event => {
   $('#submit').disabled = true;
   $('#notice').textContent = 'Uploading your story and reference images…';
   try {
-    const renderSettings = custom ? {
-      model:$('#render-model').value, loras:readLoraRows(),
-      steps:$('#render-steps').valueAsNumber
-    } : null;
+    const renderSettings = custom ? readRenderSettings() : null;
     const result = await post('/projects',{
       story:$('#story').value, profile:$('#profile').value, aspect:$('#aspect').value,
       writer_prompt:$('#writer-prompt').value,
@@ -889,11 +985,12 @@ $('#create-form').addEventListener('submit',async event => {
   finally { $('#submit').disabled = false; }
 });
 $('#new-project').addEventListener('click',() => {
+  showSettingsPage(false);
   $('#create-form').reset();
   loraOptions = undefined;
   $('#render-loras').replaceChildren();
-  if ($('#writer-settings').open && writerDefaults) $('#writer-prompt').value = writerDefaults.prompt;
-  showRenderSettings();
+  applyFilmDefaults();
+  if ($('#writer-settings').open && !$('#writer-prompt').value) loadWriterPrompt();
   state.previewUrls.forEach(url => URL.revokeObjectURL(url));
   state.previewUrls = [];
   $('#previews').replaceChildren();
@@ -946,8 +1043,10 @@ api('/profiles').then(({profiles}) => {
   const options = profiles.map(profile => new Option(profile.title, profile.id));
   select.replaceChildren(...options, new Option('Custom render settings', 'own-settings'));
   if ([...select.options].some(option => option.value === selected)) select.value = selected;
-}).catch(() => {});
-navigate();
+}).catch(() => {}).then(() => {
+  applyFilmDefaults();
+  navigate();
+});
 </script>
 </body>
 </html>
