@@ -27,7 +27,7 @@ from studio_refine import (MAX_FEEDBACK, MAX_REVISED_PROMPT, clip_duration, refi
 from studio_render import RenderClient, RenderError
 from studio_storage import atomic_json, gpu_lock, progress, read_json
 from studio_writer import (DEFAULT_WRITER_PROMPT, MAX_REFERENCE_NOTE, MAX_WRITER_PROMPT,
-                           bind_shot_references, read_reference_notes, referenced_slots)
+                           bind_shot_references, qwen_ready, read_reference_notes, referenced_slots)
 
 ROOT = Path(os.environ.get("STUDIO_PROJECTS", "/workspace/studio/projects"))
 HERE = Path(__file__).resolve().parent
@@ -39,6 +39,27 @@ MAX_IMAGE = 8 * 1024 * 1024
 MAX_REQUEST = 100 * 1024 * 1024
 Image.MAX_IMAGE_PIXELS = 25_000_000
 DEFAULT_PROFILE = {"id": "studio-turbo8", "title": "Studio H3 Turbo 8-step"}
+
+
+def startup_status():
+    try:
+        models = read_json(Path("/tmp/hf_download_status.json"))
+    except (OSError, ValueError):
+        models = {}
+    try:
+        planner_ready = qwen_ready()
+    except OSError:
+        planner_ready = False
+    try:
+        renderer_ready = any(
+            profile["id"] == DEFAULT_PROFILE["id"] and profile.get("ready")
+            for profile in RenderClient().capabilities()["profiles"]
+        )
+    except (OSError, ValueError, KeyError, RenderError):
+        renderer_ready = False
+    return {"planner_ready": planner_ready, "renderer_ready": renderer_ready,
+            "models": [{"name": Path(name).name, "status": entry["status"]}
+                       for name, entry in models.items()]}
 
 
 def render_profiles():
@@ -165,14 +186,14 @@ def stage_film_revision(parent, payload):
     with QUEUE_LOCK:
         path = parent / "film-review" / "review.json"
         if not path.is_file():
-            raise ValueError("Run a film review first.")
+            raise ValueError("Run a movie review first.")
         review = read_json(path)
         if review["status"] != "ready" or not review.get("id") or payload.get("review_id") != review["id"]:
-            raise ValueError("Choose the current completed film review.")
+            raise ValueError("Choose the current completed movie review.")
         prompts = {int(shot) - 1: item["prompt"] for shot, item in review.get("reviews", {}).items()
                    if item.get("prompt")}
         if not prompts:
-            raise ValueError("This film review has no changes to apply.")
+            raise ValueError("This movie review has no changes to apply.")
         existing = ROOT / review["id"]
         if (existing / "status").is_file():
             return existing
@@ -245,9 +266,9 @@ def stage_film_review(project, payload):
         raise ValueError(f"Describe what to review in up to {MAX_FEEDBACK:,} characters.")
     with QUEUE_LOCK:
         if not (project / "film.mp4").is_file() or not (project / "production.json").is_file():
-            raise ValueError("Wait for the film to finish before reviewing all clips.")
+            raise ValueError("Wait for the movie to finish before reviewing all clips.")
         if directory in ACTIVE_REFINEMENTS:
-            raise ValueError("A film review is already running.")
+            raise ValueError("A movie review is already running.")
         review = {"id": uuid.uuid4().hex, "feedback": feedback.strip(), "status": "queued"}
         atomic_json(directory / "review.json", review)
         ACTIVE_REFINEMENTS.add(directory)
@@ -449,6 +470,8 @@ class StudioHandler(BaseHTTPRequestHandler):
             return self.json(200, status="ok")
         if not self.allowed():
             return
+        if self.path == "/startup-status":
+            return self.json(200, **startup_status())
         if self.path == "/profiles":
             return self.json(200, profiles=render_profiles())
         if self.path == "/writer-prompt":
@@ -496,7 +519,7 @@ class StudioHandler(BaseHTTPRequestHandler):
                 if any(not math.isfinite(duration) or duration <= 0 for duration in durations):
                     raise ValueError("Invalid clip duration")
             except (OSError, ValueError, subprocess.SubprocessError):
-                return self.json(503, error="Studio could not find this transition in the film.")
+                return self.json(503, error="Studio could not find this transition in the movie.")
             boundary = sum(durations[:-1])
             return self.json(200, start=boundary - min(2, durations[-2]),
                              end=boundary + min(2, durations[-1]))

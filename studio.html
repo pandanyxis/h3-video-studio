@@ -132,11 +132,15 @@ summary { cursor:pointer; font-size:13px; font-weight:550; }
   </div>
 </aside>
 <main>
-  <div class="topbar"><span class="eyebrow">From idea to film</span><span class="badge"><span class="dot" aria-hidden="true"></span> Studio · MiniMax H3</span></div>
+  <div class="topbar"><span class="eyebrow">From idea to movie</span><span class="badge"><span class="dot" aria-hidden="true"></span> Studio · MiniMax H3</span></div>
   <div class="eyebrow" id="page-label">New project</div>
   <h1 id="heading">What story do you want to tell?</h1>
-  <p class="intro" id="intro">Add a shot idea or story and your reference images. Studio plans the shots, writes the prompts, and makes the film.</p>
+  <p class="intro" id="intro">Add a shot idea or story and your reference images. Studio plans the shots, writes the prompts, and makes the movie.</p>
   <div id="notice" role="status" aria-live="polite"></div>
+  <section id="startup-status" class="project-progress" role="status" hidden>
+    <strong>Studio startup</strong>
+    <p id="startup-detail"></p>
+  </section>
   <div class="layout">
     <div>
       <section class="panel" id="input-panel" aria-label="New video project">
@@ -192,10 +196,10 @@ summary { cursor:pointer; font-size:13px; font-weight:550; }
           </select>
           </div>
           <span class="hint">Studio plans the shot count from your story. Each clip lasts up to 15 seconds.</span>
-          <button id="submit" class="primary">Make my film <span aria-hidden="true">↗</span></button>
+          <button id="submit" class="primary">Make my movie <span aria-hidden="true">↗</span></button>
         </form>
       </section>
-      <section class="panel" id="settings-panel" aria-label="Film defaults" hidden>
+      <section class="panel" id="settings-panel" aria-label="Movie defaults" hidden>
         <div id="default-settings-fields"></div>
         <div class="actions">
           <button id="save-film-defaults" type="button" class="primary">Save defaults</button>
@@ -211,15 +215,15 @@ summary { cursor:pointer; font-size:13px; font-weight:550; }
         <h2>Your story</h2>
         <p class="project-story" id="saved-story"></p>
         <div class="thumbnails" id="saved-images"></div>
-        <p id="previous-film" hidden><a id="previous-film-link">View previous film version</a></p>
+        <p id="previous-film" hidden><a id="previous-film-link">View previous movie version</a></p>
         <div id="render-preview" hidden>
           <h2 id="render-preview-title">Latest rendered clip</h2>
           <video class="shot-video" id="render-preview-video" controls playsinline preload="auto" aria-labelledby="render-preview-title"></video>
         </div>
         <div id="project-output" hidden>
-          <h2>Your film is ready</h2>
-          <video id="film" controls preload="metadata" aria-label="Finished film"></video>
-          <a class="download" id="download" download="film.mp4">Download MP4</a>
+          <h2>Your movie is ready</h2>
+          <video id="film" controls preload="metadata" aria-label="Finished movie"></video>
+          <a class="download" id="download" download="movie.mp4">Download MP4</a>
         </div>
         <div class="actions">
           <button id="resume" class="secondary" type="button" hidden>Resume production</button>
@@ -245,14 +249,14 @@ summary { cursor:pointer; font-size:13px; font-weight:550; }
       </section>
     </div>
     <section class="panel workflow" aria-label="Production steps">
-      <h2>How Studio makes your film</h2>
+      <h2>How Studio makes your movie</h2>
       <ol class="steps">
         <li data-stage="input"><span class="step-number">1</span><div><strong>Your idea &amp; references</strong><small>Story and reference images</small></div></li>
         <li data-stage="planning"><span class="step-number">2</span><div><strong>Story &amp; Shot Planner</strong><small>Shot count and duration</small></div></li>
         <li data-stage="writing"><span class="step-number">3</span><div><strong>Studio Writer</strong><small>Movement, camera, and sound</small></div></li>
         <li data-stage="rendering"><span class="step-number">4</span><div><strong>Render clips</strong><small>Review each clip before the next</small></div></li>
         <li data-stage="reviewing"><span class="step-number">5</span><div><strong>Review transitions</strong><small>Visual continuity between clips</small></div></li>
-        <li data-stage="exporting"><span class="step-number">6</span><div><strong>Export MP4</strong><small>Your film and individual clips</small></div></li>
+        <li data-stage="exporting"><span class="step-number">6</span><div><strong>Export MP4</strong><small>Your movie and individual clips</small></div></li>
       </ol>
     </section>
   </div>
@@ -269,7 +273,7 @@ const labels = {
   references:'Studio is attaching reference images to the shots.', rendering:'Studio is rendering your clips.',
   adapting:'Qwen is comparing the rendered clip with the plan for the next shot.',
   reviewing:'Qwen is comparing frames across clip boundaries.',
-  exporting:'Studio is preparing the MP4 and individual clips.', done:'Your film is ready.', failed:'Production was interrupted.'
+  exporting:'Studio is preparing the MP4 and individual clips.', done:'Your movie is ready.', failed:'Production was interrupted.'
 };
 const statusLabels = {queued:'Queued',running:'In production',done:'Complete',failed:'Interrupted'};
 statusLabels.cancelled = 'Cancelled';
@@ -288,6 +292,27 @@ async function api(path, options) {
 function post(path, body={}) {
   return api(path, {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
 }
+async function refreshStartupStatus() {
+  const panel = $('#startup-status');
+  let message;
+  try {
+    const {planner_ready, renderer_ready, models} = await api('/startup-status');
+    const completed = models.filter(model => model.status === 'done').length;
+    const active = models.find(model => model.status === 'downloading');
+    const renderer = renderer_ready ? 'Renderer ready.' :
+      active ? 'Downloading ' + active.name + ' (' + completed + ' of ' + models.length + ' files verified).' :
+      'Preparing the renderer and checking model files.';
+    message = (planner_ready ? 'Planner ready. ' : 'Starting the planner. ') + renderer;
+    if (planner_ready && renderer_ready) message = 'Ready to make a movie.';
+  } catch {
+    message = 'Waiting for Studio startup status…';
+  }
+  const detail = $('#startup-detail');
+  if (detail.textContent !== message) detail.textContent = message;
+  panel.hidden = false;
+  setTimeout(refreshStartupStatus, 10000);
+}
+refreshStartupStatus();
 function thumbnail(source, caption) {
   const figure = document.createElement('figure');
   const image = document.createElement('img');
@@ -338,7 +363,7 @@ function transitionPlayer(base, index) {
   button.addEventListener('click', async () => {
     button.disabled = true;
     status.hidden = false;
-    status.textContent = 'Finding the transition in the film…';
+    status.textContent = 'Finding the transition in the movie…';
     try {
       const {start, end} = await api(base + '/cuts/' + index);
       const video = document.createElement('video');
@@ -371,7 +396,7 @@ function showFilmReview(project) {
   }
   panel.dataset.signature = signature;
   form.querySelector('button').disabled = ['queued','reviewing'].includes(review?.status);
-  const status = {queued:'Film review queued…',reviewing:'Qwen is reviewing the clips together…',
+  const status = {queued:'Movie review queued…',reviewing:'Qwen is reviewing the clips together…',
     ready:review?.summary,failed:review?.error};
   $('#film-review-status').textContent = status[review?.status] || '';
   const findings = $('#film-review-findings');
@@ -423,7 +448,7 @@ $('#film-review-form').addEventListener('submit', async event => {
   const id = state.id;
   const generation = state.generation;
   form.querySelector('button').disabled = true;
-  $('#film-review-status').textContent = 'Submitting film review…';
+  $('#film-review-status').textContent = 'Submitting movie review…';
   try {
     await post('/projects/' + id + '/film-review', {feedback:form.querySelector('textarea').value});
     if (generation === state.generation) {
@@ -746,7 +771,7 @@ function navigate() {
   $('#cancel-project').hidden = true;
   $('#log').hidden = true;
   $('#page-label').textContent = settings ? 'Settings' : state.id ? 'Your project' : 'New project';
-  $('#heading').textContent = settings ? 'Film defaults' : state.id ? 'Opening project…' : 'What story do you want to tell?';
+  $('#heading').textContent = settings ? 'Movie defaults' : state.id ? 'Opening project…' : 'What story do you want to tell?';
   state.referenceId = null;
   state.shotSignature = null;
   pipeline('input');
@@ -919,7 +944,7 @@ function showSettingsPage(open) {
   if (open) {
     draftFilmSettings = readFilmSettings();
     $('#default-settings-fields').append(fields);
-    $('#film-defaults-status').textContent = 'Defaults for new films in this browser.';
+    $('#film-defaults-status').textContent = 'Defaults for new movies in this browser.';
     applyFilmDefaults();
   } else {
     $('#create-form').insertBefore(fields, $('#submit').previousElementSibling);
@@ -944,8 +969,8 @@ $('#save-film-defaults').addEventListener('click', () => {
     localStorage.setItem(filmDefaultsKey, JSON.stringify(settings));
     filmDefaults = settings;
     $('#clear-film-defaults').disabled = false;
-    status.textContent = 'Defaults saved for new films in this browser.';
-  } catch { status.textContent = 'This browser could not save your film defaults.'; }
+    status.textContent = 'Defaults saved for new movies in this browser.';
+  } catch { status.textContent = 'This browser could not save your movie defaults.'; }
 });
 $('#clear-film-defaults').addEventListener('click', () => {
   const status = $('#film-defaults-status');
@@ -955,7 +980,7 @@ $('#clear-film-defaults').addEventListener('click', () => {
     $('#clear-film-defaults').disabled = true;
     applyFilmDefaults();
     status.textContent = 'Saved defaults cleared.';
-  } catch { status.textContent = 'This browser could not clear your film defaults.'; }
+  } catch { status.textContent = 'This browser could not clear your movie defaults.'; }
 });
 $('#create-form').addEventListener('submit',async event => {
   event.preventDefault();
@@ -1026,7 +1051,7 @@ $('#cancel-all').addEventListener('click',async () => {
   finally { button.disabled = false; }
 });
 $('#clear-projects').addEventListener('click',async () => {
-  if (!window.confirm('Permanently delete all Studio projects, clips, and exported films on this pod?')) return;
+  if (!window.confirm('Permanently delete all Studio projects, clips, and exported movies on this pod?')) return;
   const button = $('#clear-projects');
   button.disabled = true;
   try {
