@@ -24,4 +24,4 @@ The runtime generates a local Qwen key and stores it privately under `/workspace
 
 ## GPU smoke test
 
-Open Studio and render a short story with one reference image. Check that each planned shot has a prompt and a clip, each clip stays within ten seconds, and the exported MP4 plays. Stop the test pod when finished.
+Open Studio and render a short story with one reference image. Check that each planned shot has a prompt and a clip, each clip stays within fifteen seconds, and the exported MP4 plays. Stop the test pod when finished.

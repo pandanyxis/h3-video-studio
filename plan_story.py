@@ -6,7 +6,7 @@ from pathlib import Path
 from urllib.request import Request, urlopen
 
 MAX_SHOTS = 20
-MAX_SHOT_SECONDS = 10
+MAX_SHOT_SECONDS = 15
 SHOT_FIELDS = ("action", "camera", "sound", "start", "end")
 PARAGRAPH_GUIDANCE = (
     "When the supplied story contains paragraph breaks, use them as cues to reassess what the viewer "

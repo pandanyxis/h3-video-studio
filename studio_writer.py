@@ -210,7 +210,7 @@ def plan_and_write(story, pictures, project=None, writer_prompt=DEFAULT_WRITER_P
         "pacing. Use shorter clips for quick actions and longer clips for actions that need time. "
         "Plan the story as a chain of beats. Establish the opening situation, carry each action or "
         "reaction forward from what just happened, and reach the ending implied or requested by the user. "
-        "Keep the user's sequence, causal links and payoff. When a beat needs more than ten seconds, "
+        f"Keep the user's sequence, causal links and payoff. When a beat needs more than {MAX_SHOT_SECONDS} seconds, "
         "split it at a clear point in the action. Continue that action from the split without replaying "
         "its setup, reintroducing the characters, or jumping ahead to an unrelated event. "
         "The cut flag describes how THIS shot starts. Set cut to false for continuous action. "
