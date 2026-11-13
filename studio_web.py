@@ -650,7 +650,9 @@ class StudioHandler(BaseHTTPRequestHandler):
                     raise ValueError("Review and approve the remake before rendering.")
                 plan = compile_plan(payload)
                 project = stage({"story": plan["story"], "images": payload["images"],
-                                 "aspect": payload.get("aspect")}, plan=plan)
+                                 "aspect": payload["aspect"],
+                                 "profile": payload.get("profile", DEFAULT_PROFILE["id"]),
+                                 "render_settings": payload.get("render_settings")}, plan=plan)
             elif revision and revision[2] == "film-revision":
                 project = stage_film_revision(ROOT / revision[1], payload)
             else:

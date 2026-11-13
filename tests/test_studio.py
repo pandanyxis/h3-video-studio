@@ -293,6 +293,25 @@ class WebTests(unittest.TestCase):
         self.assertEqual(error.exception.code, 409)
         error.exception.close()
 
+    def test_remake_uses_selected_render_settings(self):
+        settings = {"model": "custom.safetensors",
+                    "loras": [{"name": "style.safetensors", "strength": 0.7}], "steps": 12}
+        shot = dict(shot_plan(1)["shots"][0], start_time=0, end_time=3,
+                    cut=True, roles=[], location="Room")
+        payload = {"approved": True, "aspect": "16:9", "images": [],
+                   "shots": [shot], "roles": {},
+                   "locations": {"Room": {"mode": "recreate", "description": "A small room"}},
+                   "profile": "own-settings", "render_settings": settings}
+        with patch.object(web, "RenderClient") as client, \
+                patch.object(web, "selection_profile", return_value="custom-test") as select, \
+                patch.object(web, "schedule") as schedule:
+            with self.post("/remakes", payload) as response:
+                self.assertEqual(response.status, 202)
+                project = web.ROOT / json.load(response)["id"]
+            select.assert_called_once_with(settings, client.return_value.model_options.return_value)
+            schedule.assert_called_once_with(project)
+        self.assertEqual(web.read_json(project / "project.json")["profile"], "custom-test")
+
     def test_cut_preview_uses_rendered_durations(self):
         project = web.stage({"story": "A boat", "images": [image_data()]})
         web.atomic_json(project / "shots.json", shot_plan(3))

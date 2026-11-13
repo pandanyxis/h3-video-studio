@@ -166,6 +166,7 @@ summary { cursor:pointer; font-size:13px; font-weight:550; }
               <p class="hint">Open a shot to correct its cast, location, action or camera. H3 recreates the shots from prompts and still images. Timing is rounded to H3's frame grid.</p>
               <div id="remake-shots"></div>
             </details>
+            <div id="remake-film-settings"></div>
             <label><input id="approve-remake" type="checkbox" required> I approve these assignments and the shot plan</label>
             <button class="primary">Render remake</button>
           </form>
@@ -214,12 +215,14 @@ summary { cursor:pointer; font-size:13px; font-weight:550; }
             <p id="render-options-status" class="hint" role="status"></p>
             <button id="reload-models" type="button" class="secondary">Reload models</button>
           </div>
+          <div id="aspect-settings">
           <label for="aspect">Aspect ratio</label>
           <select id="aspect">
             <option value="auto">Automatic based on the first reference image</option>
             <option value="16:9">16:9 · Landscape</option>
             <option value="9:16">9:16 · Portrait</option>
           </select>
+          </div>
           </div>
           <span class="hint">Studio plans the shot count from your story. Each clip lasts up to 10 seconds.</span>
           <button id="submit" class="primary">Make my movie <span aria-hidden="true">↗</span></button>
@@ -940,12 +943,23 @@ $('#remake-review').addEventListener('invalid', event => {
     if (parent instanceof HTMLDetailsElement) parent.open = true;
   }
 }, true);
+function placeFilmSettings() {
+  const fields = $('#film-settings');
+  const settings = !$('#settings-panel').hidden;
+  const remake = !settings && $('#project-tool').value === 'remake';
+  $('#writer-settings').hidden = remake;
+  $('#aspect-settings').hidden = remake;
+  if (settings) $('#default-settings-fields').append(fields);
+  else if (remake) $('#remake-film-settings').append(fields);
+  else $('#create-form').insertBefore(fields, $('#submit').previousElementSibling);
+}
 $('#project-tool').addEventListener('change', () => {
   const remake = $('#project-tool').value === 'remake';
   $('#remake-tool').hidden = !remake;
   $('#create-form').hidden = remake;
   $('#intro').hidden = remake;
   $('#heading').textContent = remake ? 'Remake a video' : 'What story do you want to tell?';
+  placeFilmSettings();
 });
 $('#remake-upload').addEventListener('submit', async event => {
   event.preventDefault();
@@ -987,6 +1001,11 @@ $('#remake-review').addEventListener('submit', async event => {
   const {analysis, rows, shotRows} = remakeAnalysis;
   const button = event.submitter;
   const status = $('#remake-status');
+  const custom = $('#profile').value === 'own-settings';
+  if (custom && $('#render-settings').disabled) {
+    status.textContent = 'Wait for Studio to load the models and LoRAs.';
+    return;
+  }
   button.disabled = true;
   status.textContent = 'Preparing the approved remake…';
   try {
@@ -997,7 +1016,8 @@ $('#remake-review').addEventListener('submit', async event => {
         location:row.location.value};
     });
     const images = [];
-    const payload = {shots, images, aspect:analysis.aspect, approved:$('#approve-remake').checked};
+    const payload = {shots, images, aspect:analysis.aspect, approved:$('#approve-remake').checked,
+      profile:$('#profile').value, ...(custom ? {render_settings:readRenderSettings()} : {})};
     for (const [kind, names] of [
       ['roles', new Set(shots.flatMap(shot => shot.roles))],
       ['locations', new Set(shots.map(shot => shot.location))]
@@ -1178,14 +1198,12 @@ function showSettingsPage(open) {
   panel.hidden = !open;
   if (open) $('#settings-link').setAttribute('aria-current', 'page');
   else $('#settings-link').removeAttribute('aria-current');
-  const fields = $('#film-settings');
+  placeFilmSettings();
   if (open) {
     draftFilmSettings = readFilmSettings();
-    $('#default-settings-fields').append(fields);
     $('#film-defaults-status').textContent = 'Defaults for new movies in this browser.';
     applyFilmDefaults();
   } else {
-    $('#create-form').insertBefore(fields, $('#submit').previousElementSibling);
     applyFilmDefaults(draftFilmSettings);
     if ($('#writer-settings').open && !$('#writer-prompt').value) loadWriterPrompt();
     draftFilmSettings = undefined;
