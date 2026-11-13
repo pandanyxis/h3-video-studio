@@ -55,7 +55,11 @@ def shot_count_instruction(count=None):
     if count is not None:
         return f"Plan exactly {count} consecutive shots for the supplied idea or story. "
     return (
-        f"Choose the fewest shots that fully tell the supplied idea or story, from 1 to {MAX_SHOTS}. "
+        f"Plan 1 to {MAX_SHOTS} shots that fully tell the story at a natural pace. "
+        "Estimate how long movement, dialogue, and reactions take before deciding what fits in each shot. "
+        "Allow time for actions to start, develop, and settle, and for any meaningful pause or response. "
+        f"Prefer a longer clip up to {MAX_SHOT_SECONDS} seconds when the action needs room to unfold. "
+        "If it still needs more time, split at a natural pause or reaction and continue from that state. "
         "Use one shot for a simple continuous action that fits in one clip. Split into more shots "
         "when distinct story beats, camera cuts, time or location changes, or the duration limit require it. "
         "Do not pad simple ideas with filler shots or force a fixed count. "
