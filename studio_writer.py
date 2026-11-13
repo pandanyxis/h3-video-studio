@@ -174,7 +174,10 @@ def bind_shot_references(prompt, shot, slots, *, existing=()):
     missing = (required | set(existing)) - used
     if missing:
         refs = ", ".join(f"@{slot}" for slot in sorted(missing))
-        prompt += f" Where subjects or settings from {refs} appear, preserve their appearance and identity throughout the shot."
+        prompt += (
+            f" Use {refs} for their assigned subjects and settings. Preserve character identity "
+            "and follow the clothing specified in the clip, including any planned changes."
+        )
     return prompt
 
 

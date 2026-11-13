@@ -55,6 +55,8 @@ CONTINUITY_GUIDANCE = (
     "Treat a clearly stated or unambiguously implied absence of clothing as a wardrobe state. "
     "Record whether a specific garment is absent or the character is unclothed. Carry that state "
     "forward until the story establishes a change. When the text is ambiguous, keep the established wardrobe. "
+    "When a scene opens with an action that clearly requires a changed garment state, record that "
+    "state in start. Include a clothing change in action only if it happens on screen in this shot. "
 )
 
 
