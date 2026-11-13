@@ -129,6 +129,13 @@ class WriterTests(unittest.TestCase):
                 self.assertIn("@image18", result["shots"][0]["prompt"])
                 self.assertNotIn("@image17", result["shots"][0]["prompt"])
 
+    def test_qwen_replans_when_shot_count_exceeds_limit(self):
+        replies = [shot_plan(21), shot_plan(1), {"prompts": ["The boat drifts."]}]
+        with patch.object(writer, "ask_qwen", side_effect=replies) as call:
+            result = writer.plan_and_write("A boat", [("image17", None)])
+        self.assertEqual(len(result["shots"]), 1)
+        self.assertIn("Expected a plan with 1 to 20 shots", call.call_args_list[1].args[0])
+
     def test_qwen_retries_truncated_output_without_thinking(self):
         def response(finish_reason, content):
             return BytesIO(json.dumps({"choices": [{

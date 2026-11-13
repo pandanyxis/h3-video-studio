@@ -271,16 +271,20 @@ def plan_and_write(story, pictures, project=None, writer_prompt=DEFAULT_WRITER_P
             if project:
                 check_cancelled(project)
             plan = ask_qwen(planner_instructions + retry_instruction, story, pictures, reference_notes=notes)
-        shots = validate_plan(plan, require_duration=not resumed)
         try:
+            shots = validate_plan(plan, require_duration=not resumed)
             for shot in shots:
                 if "reference_slots" in shot:
                     shot["reference_slots"] = planned_reference_slots(shot, slots)
-        except InvalidPlannerReferences as error:
+        except ValueError as error:
             if attempt == 1:
                 raise
             plan = None
-            retry_instruction = f" Correct the reference_slots arrays. {error}"
+            retry_instruction = (
+                f" The previous plan failed validation: {error}. "
+                "Return a complete corrected plan for the entire story. "
+                "If there were too many shots, combine compatible beats while preserving pacing and the ending."
+            )
         else:
             break
     if saved:
