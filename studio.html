@@ -153,7 +153,7 @@ summary { cursor:pointer; font-size:13px; font-weight:550; }
           <form id="remake-upload">
             <label for="remake-video">Source video</label>
             <input id="remake-video" type="file" accept="video/mp4,.mp4" required>
-            <p class="hint">MP4 up to 10 minutes and 1,250 MiB.</p>
+            <p class="hint">MP4 up to 10 minutes and 1 GB.</p>
             <button class="primary">Analyze video</button>
           </form>
           <p id="remake-status" role="status" aria-live="polite"></p>
@@ -952,8 +952,8 @@ $('#remake-upload').addEventListener('submit', async event => {
   const file = $('#remake-video').files[0];
   const button = event.submitter;
   const status = $('#remake-status');
-  if (file.size > 1250 * 1024 * 1024) {
-    status.textContent = 'Choose an MP4 video up to 1,250 MiB.';
+  if (file.size > 1_000_000_000) {
+    status.textContent = 'Choose an MP4 video up to 1 GB.';
     return;
   }
   button.disabled = true;

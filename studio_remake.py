@@ -9,8 +9,7 @@ from plan_story import MAX_SHOT_SECONDS, SHOT_FIELDS, validate_plan
 from studio_refine import clip_duration, extract_review_frame
 from studio_writer import ask_qwen
 
-MAX_VIDEO_MIB = 1250
-MAX_VIDEO = MAX_VIDEO_MIB * 1024 * 1024
+MAX_VIDEO = 1_000_000_000
 MAX_DURATION = 600
 MAX_SHOTS = 600
 SHOT_DESCRIPTIONS = ", ".join(SHOT_FIELDS)

@@ -26,7 +26,7 @@ from studio_profiles import MAX_LORAS, SELECTION_PREFIX, default_settings, selec
 from studio_refine import (MAX_FEEDBACK, MAX_REVISED_PROMPT, clip_duration, refine_clip,
                            review_film, revision_inputs)
 from studio_render import RenderClient, RenderError
-from studio_remake import MAX_VIDEO, MAX_VIDEO_MIB, analyze, compile_plan
+from studio_remake import MAX_VIDEO, analyze, compile_plan
 from studio_storage import atomic_json, gpu_lock, progress, read_json
 from studio_writer import (DEFAULT_WRITER_PROMPT, MAX_REFERENCE_NOTE, MAX_WRITER_PROMPT,
                            bind_shot_references, qwen_ready, read_reference_notes, referenced_slots)
@@ -569,7 +569,7 @@ class StudioHandler(BaseHTTPRequestHandler):
         except ValueError:
             length = 0
         if not 0 < length <= MAX_VIDEO:
-            return self.json(413, error=f"Choose an MP4 video up to {MAX_VIDEO_MIB:,} MiB.")
+            return self.json(413, error="Choose an MP4 video up to 1 GB.")
         with REMAKE_LOCK:
             busy = REMAKE_ANALYSIS.get("running")
             if not busy:
