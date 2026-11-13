@@ -31,6 +31,8 @@ DIALOGUE_INSTRUCTIONS = (
     "allows. Align the start and end of the audible words with that speaker's mouth movements. "
     "Use one speaker at a time unless overlap is explicitly requested. Keep other mouths at rest and "
     "keep ambience and music below the voice. Separate requested voice-over from on-screen speech. "
+    "Keep dialogue foregrounded, clearly articulated, and at a natural conversational pace. "
+    "Place loud effects before or after spoken lines where the planned timing allows. "
     "For shots without requested dialogue or narration, specify the relevant ambience and effects only, "
     "with no speech, crowd chatter, or mouth movements that imply speech. "
 )
@@ -248,6 +250,8 @@ def plan_and_write(story, pictures, project=None, writer_prompt=DEFAULT_WRITER_P
         "In sound, record the requested dialogue and narration with their language, speaker and exact words. "
         "Write new spoken lines in English unless the user requests another language. "
         "Allow enough time for natural delivery. Split dialogue between complete lines, not within a line. "
+        "Budget time for each line, pauses between speakers, and actions that must happen before or after speech. "
+        "If a line alone exceeds the clip limit, split at a natural clause boundary and preserve every spoken word. "
         "When speech is not requested, plan ambience and effects only. "
         "Ground character identity, clothing, objects and locations in the reference images. "
         + REFERENCE_ROLE_INSTRUCTIONS +
