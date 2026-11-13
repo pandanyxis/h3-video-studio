@@ -14,6 +14,7 @@ concurrency:
 
 jobs:
   publish:
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -34,13 +35,29 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       - uses: docker/build-push-action@v6
+        id: image
         with:
           context: .
           file: runpod/Dockerfile
           push: true
           platforms: linux/amd64
+          provenance: false
           cache-from: type=gha,scope=studio-runtime
           cache-to: type=gha,scope=studio-runtime,mode=max,ignore-error=true
-          tags: |
-            ghcr.io/pandanyxis/h3-video-studio:latest
-            ghcr.io/pandanyxis/h3-video-studio:${{ github.sha }}
+          tags: ghcr.io/pandanyxis/h3-video-studio:latest
+      - name: Remove superseded Studio images
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          IMAGE_DIGEST: ${{ steps.image.outputs.digest }}
+        run: |
+          set -euo pipefail
+          package=users/pandanyxis/packages/container/h3-video-studio
+          versions=$(gh api --paginate --slurp "$package/versions?per_page=100" | jq 'add')
+          jq -e --arg digest "$IMAGE_DIGEST" '
+            [.[] | select(.metadata.container.tags | index("latest")) | .name] == [$digest]
+          ' <<< "$versions" >/dev/null
+          jq -r --arg digest "$IMAGE_DIGEST" '
+            .[] | select(.name != $digest) | .id
+          ' <<< "$versions" | while read -r version; do
+            gh api --method DELETE "$package/versions/$version"
+          done

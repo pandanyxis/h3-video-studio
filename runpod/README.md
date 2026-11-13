@@ -4,10 +4,10 @@ Runpod supplies one GPU for Qwen and MiniMax H3. The image also includes the Stu
 
 ## Image and storage
 
-Build from the repository root with `runpod/Dockerfile` or deploy the published image using a successful GitHub build's commit tag.
+Build from the repository root with `runpod/Dockerfile` or deploy the image from the latest successful GitHub build.
 
 ```sh
-python runpod/make_template.py --image ghcr.io/pandanyxis/h3-video-studio:COMMIT_SHA
+python runpod/make_template.py --image ghcr.io/pandanyxis/h3-video-studio:latest
 ```
 
 The script writes `runpod-template.json` for the Runpod REST API. Use an RTX PRO 6000 Blackwell with 96 GB VRAM and a CUDA 13-compatible driver. The template uses a 150 GB container disk with no persistent volume. The standard weights use about 70 GiB. The remaining space holds extra models, downloads, and projects.

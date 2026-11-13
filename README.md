@@ -6,10 +6,10 @@ The local Qwen planner chooses the number of shots based on the story and assign
 
 ## Start the GPU host
 
-GitHub Actions builds `runpod/Dockerfile` from the repository root and publishes it to `ghcr.io/pandanyxis/h3-video-studio`. Use a commit tag to deploy a specific build.
+GitHub Actions builds `runpod/Dockerfile` from the repository root and publishes it to `ghcr.io/pandanyxis/h3-video-studio:latest`. After publishing, the workflow removes superseded package versions.
 
 ```sh
-python runpod/make_template.py --image ghcr.io/pandanyxis/h3-video-studio:COMMIT_SHA
+python runpod/make_template.py --image ghcr.io/pandanyxis/h3-video-studio:latest
 ```
 
 Use an RTX PRO 6000 Blackwell with 96 GB VRAM and CUDA 13 or newer. The template allocates 150 GB of temporary container storage. A private image requires read access through Runpod Container Registry Auth. See the [Runpod setup guide](runpod/README.md).
