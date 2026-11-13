@@ -169,7 +169,10 @@ def render_with_reviews(client, args, project, state, receipt, clips):
     for index in range(state["completed_shots"], len(boxes)):
         if "job_id" not in state and not state.get("submitting"):
             check_cancelled(project)
-        if index and str(index) not in state["handoffs"]:
+        # A remake's approved prompts describe the source shots. A generated
+        # take must not rewrite the next shot to match its own deviations.
+        source_shot = "source_start" in plan["shots"][index]
+        if index and not source_shot and str(index) not in state["handoffs"]:
             progress(project, "adapting", completed=index, total=len(boxes), current_shot=index + 1)
             try:
                 for retry_delay in (5, 15, None):

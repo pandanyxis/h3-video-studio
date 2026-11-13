@@ -237,6 +237,12 @@ def refine_clip(project, directory, request):
 
 def review_film(project, feedback):
     plan = read_json(project / "production.json")["plan"]
+    remake_guidance = (
+        "This is a remake. Use each approved source shot description and its visual assignments as the target. "
+        "Compare each rendered shot with its own target first. Treat deviations in adjacent rendered shots "
+        "as issues to correct, never as a reason to change the intended action, camera, cast, or location. "
+        if any("source_start" in shot for shot in plan["shots"]) else ""
+    )
     report = project / "transitions.json"
     transitions = read_json(report) if report.is_file() else {}
     with TemporaryDirectory() as temporary:
@@ -263,7 +269,7 @@ def review_film(project, feedback):
             "the change) and prompt (the full replacement English H3 prompt). Otherwise omit feedback and prompt. "
             "Preserve required references, use only image labels found in the plan, and preserve the duration "
             "and intended beat. Coordinate replacements with adjacent shots so they join naturally. "
-            + DIALOGUE_INSTRUCTIONS,
+            + remake_guidance + DIALOGUE_INSTRUCTIONS,
             json.dumps({"story": plan["story"], "shots": plan["shots"], "feedback": feedback,
                         "transition_reviews": transitions}, ensure_ascii=False),
             [], clip_frames=frames, timeout=240,
