@@ -2,7 +2,7 @@
 
 Turn a story and one to nine reference images into a film with MiniMax H3. The Studio browser interface is in `studio.html` and the project service is in `studio_web.py`.
 
-The local Qwen planner chooses the number of shots based on the story and assigns a duration to each. H3 rounds durations to its native frame grid and each clip stays within fifteen seconds. The Studio Writer then writes an H3 prompt for each shot with movement, framing, sound, and opening and closing states. Both steps are implemented in `studio_writer.py`. ComfyUI and H3 Continuity render the clips on the Runpod GPU. See [Runpod model configuration](runpod/RUNPOD-MODELS.md).
+The local Qwen planner chooses the number of shots based on the story and assigns a duration to each. H3 rounds durations to its native frame grid and each clip stays within ten seconds. The Studio Writer then writes an H3 prompt for each shot with movement, framing, sound, and opening and closing states. Both steps are implemented in `studio_writer.py`. ComfyUI and H3 Continuity render the clips on the Runpod GPU. See [Runpod model configuration](runpod/RUNPOD-MODELS.md).
 
 ## Start the GPU host
 

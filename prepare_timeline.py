@@ -3,11 +3,25 @@ import argparse
 import json
 from pathlib import Path
 
-from plan_story import MAX_SHOT_SECONDS, validate_plan
+from plan_story import LEGACY_MAX_SHOT_SECONDS, MAX_SHOT_SECONDS, validate_plan
 
 FPS = 24
 ASPECT_SIZES = {"16:9": (1024, 576), "9:16": (576, 1024)}
 FRAME_GRID = 17
+H3_MAX_RENDER_FRAMES = 362
+
+
+def cap_pending_shot_frames(document, completed=0):
+    """Apply the clip duration cap and fit carried context into H3's render window."""
+    context = document["settings"]["context_frames"]
+    boxes = document["timeline"]["boxes"]
+    for index in range(completed, len(boxes)):
+        box = boxes[index]
+        fresh = index == 0 or box["cut"]
+        limit = shot_frames(MAX_SHOT_SECONDS, fresh)
+        if not fresh:
+            limit = min(limit, ((H3_MAX_RENDER_FRAMES - context) // FRAME_GRID) * FRAME_GRID)
+        box["frames"] = min(box["frames"], limit)
 
 
 def shot_frames(duration, fresh):
@@ -22,7 +36,7 @@ def shot_frames(duration, fresh):
 
 def timeline_document(plan, name, profile, aspect=None):
     width, height = ASPECT_SIZES[aspect] if aspect else (768, 448)
-    shots = validate_plan(plan)
+    shots = validate_plan(plan, max_duration=LEGACY_MAX_SHOT_SECONDS)
     boxes = []
     for index, shot in enumerate(shots, 1):
         prompt = "\n".join((
@@ -45,7 +59,7 @@ def timeline_document(plan, name, profile, aspect=None):
                      if (index == 0 or box["cut"]) and not boxes[index + 1]["cut"]]
     context_limit = min(fresh_lengths, default=90)
     context = max(value for value in (22, 39, 90) if value <= context_limit)
-    return {
+    document = {
         "name": name,
         "profile": profile,
         "consumer": {"studio_exports_clips": True},
@@ -54,6 +68,8 @@ def timeline_document(plan, name, profile, aspect=None):
         "timeline": {"version": 1, "boxes": boxes},
         "assets": [],
     }
+    cap_pending_shot_frames(document)
+    return document
 
 
 def main():

@@ -187,11 +187,11 @@ class WriterTests(unittest.TestCase):
                 self.assertEqual(len(result["shots"]), count)
                 self.assertIn(f"exactly {count} nonempty strings", call.call_args.args[0])
 
-    def test_rejects_duration_over_fifteen_seconds(self):
+    def test_rejects_duration_over_ten_seconds(self):
         plan = shot_plan(1)
-        plan["shots"][0]["duration_seconds"] = 15.1
+        plan["shots"][0]["duration_seconds"] = 10.1
         with patch.object(writer, "ask_qwen", return_value=plan):
-            with self.assertRaisesRegex(ValueError, "duration from 1 to 15"):
+            with self.assertRaisesRegex(ValueError, "duration from 1 to 10"):
                 writer.plan_and_write("A boat", [("image17", None)])
 
     def test_writer_receives_visible_handoffs_at_continuous_boundaries(self):
@@ -232,7 +232,7 @@ class TimelineTests(unittest.TestCase):
         plan["shots"][2]["duration_seconds"] = 15
         plan["shots"][3].update(duration_seconds=15, cut=True)
         boxes = timeline_document(plan, "test", "studio-turbo8")["timeline"]["boxes"]
-        self.assertEqual([box["frames"] for box in boxes], [345, 17, 357, 345])
+        self.assertEqual([box["frames"] for box in boxes], [226, 17, 238, 226])
         self.assertTrue(boxes[-1]["cut"])
 
     def test_short_opening_can_continue_into_next_shot(self):

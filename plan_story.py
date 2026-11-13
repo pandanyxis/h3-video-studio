@@ -5,7 +5,8 @@ import os
 from pathlib import Path
 from urllib.request import Request, urlopen
 
-MAX_SHOT_SECONDS = 15
+MAX_SHOT_SECONDS = 10
+LEGACY_MAX_SHOT_SECONDS = 15
 SHOT_FIELDS = ("action", "camera", "sound", "start", "end")
 PARAGRAPH_GUIDANCE = (
     "When the supplied story contains paragraph breaks, use them as cues to reassess what the viewer "
@@ -16,8 +17,9 @@ PARAGRAPH_GUIDANCE = (
     "'meanwhile', and 'at the same time'. Resolve their meaning from the verbs and surrounding context. "
     "A 'while' clause may describe earlier background, simultaneous action in the same place, "
     "or a parallel event elsewhere. When both events are meant to be shown, plan "
-    "a distinct shot for each location even if they share a paragraph or sentence. Use a camera "
-    "cut at each location change and preserve the overlap in story time. "
+    "a distinct shot for each location even if they share a paragraph or sentence. Apply the same "
+    "rule to successive events in different locations within one paragraph. Use a camera cut "
+    "at each location change. Preserve the story's timing, including any overlap. "
     "Distinguish the state already in effect when a beat begins, the action that happens on "
     "screen, and the resulting state. Put clearly stated or implied existing conditions into start, "
     "visible changes into action, and their results into end. A description of a current state does "
@@ -66,15 +68,15 @@ def shot_count_instruction(count=None):
         "Plan as many shots as needed that fully tell the story at a natural pace. "
         "Estimate how long movement, dialogue, and reactions take before deciding what fits in each shot. "
         "Allow time for actions to start, develop, and settle, and for any meaningful pause or response. "
-        f"Prefer a longer clip up to {MAX_SHOT_SECONDS} seconds when the action needs room to unfold. "
-        "If it still needs more time, split at a natural pause or reaction and continue from that state. "
+        f"If a beat needs more than {MAX_SHOT_SECONDS} seconds, split it at a natural pause, action boundary, "
+        "or reaction. Continue from that state and preserve the full sequence at its natural pace. "
         "Use one shot for a simple continuous action that fits in one clip. Split into more shots "
         "when distinct story beats, camera cuts, time or location changes, or the duration limit require it. "
         "Do not pad simple ideas with filler shots or force a fixed count. "
     )
 
 
-def validate_plan(plan, count=None, *, require_duration=False):
+def validate_plan(plan, count=None, *, require_duration=False, max_duration=MAX_SHOT_SECONDS):
     shots = plan.get("shots") if isinstance(plan, dict) else None
     if not isinstance(shots, list) or not shots:
         raise ValueError("Expected a plan with at least one shot")
@@ -88,8 +90,8 @@ def validate_plan(plan, count=None, *, require_duration=False):
             raise ValueError(f"Shot {index} is missing required descriptions")
         if require_duration or "duration_seconds" in shot:
             duration = shot.get("duration_seconds")
-            if type(duration) not in (int, float) or not 1 <= duration <= MAX_SHOT_SECONDS:
-                raise ValueError(f"Shot {index} needs a duration from 1 to {MAX_SHOT_SECONDS} seconds")
+            if type(duration) not in (int, float) or not 1 <= duration <= max_duration:
+                raise ValueError(f"Shot {index} needs a duration from 1 to {max_duration} seconds")
         if "cut" in shot and type(shot["cut"]) is not bool:
             raise ValueError(f"Shot {index} needs a boolean cut value")
     return shots

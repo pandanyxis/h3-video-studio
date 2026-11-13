@@ -9,7 +9,7 @@ from pathlib import Path
 from urllib.error import HTTPError, URLError
 
 from export_project import export_project
-from prepare_timeline import ASPECT_SIZES, timeline_document
+from prepare_timeline import ASPECT_SIZES, cap_pending_shot_frames, timeline_document
 from studio_refine import review_before_next_shot, review_transitions
 from studio_render import RenderClient, RenderError
 from studio_storage import ProductionCancelled, atomic_json, check_cancelled, gpu_lock, progress, read_json
@@ -135,6 +135,9 @@ def produce(args):
                 ]})
             state = {"plan": plan, "document": body, "key": uuid.uuid4().hex,
                      "completed_shots": 0, "handoffs": {}}
+        atomic_json(receipt, state)
+    if "completed_shots" in state and not submitted and "render" not in state:
+        cap_pending_shot_frames(state["document"], completed=state["completed_shots"])
         atomic_json(receipt, state)
     atomic_json(project / "shots.json", state["plan"])
     atomic_json(project / "timeline.json", state["document"])
