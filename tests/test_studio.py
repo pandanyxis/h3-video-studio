@@ -293,6 +293,39 @@ class WebTests(unittest.TestCase):
         self.assertEqual(error.exception.code, 409)
         error.exception.close()
 
+    def test_remake_upload_reassembles_chunks_before_analysis(self):
+        def analyze_source(path):
+            return {"source": path.read_bytes().decode("ascii")}
+
+        with patch.object(web, "REMAKE_ANALYSIS", {}), patch.object(web, "analyze", side_effect=analyze_source) as analyze:
+            with self.post("/remakes/upload", {"size": 6}) as response:
+                job = json.load(response)
+            path = self.url + "/remakes/upload/" + job["id"]
+
+            def upload(offset, data):
+                return urlopen(Request(path, data=data, headers={
+                    "Origin": self.url, "Content-Type": "application/octet-stream",
+                    "X-Upload-Offset": str(offset),
+                }))
+
+            with self.assertRaises(HTTPError) as error:
+                upload(3, b"def")
+            self.assertEqual(error.exception.code, 409)
+            error.exception.close()
+            with upload(0, b"abc") as response:
+                self.assertEqual(json.load(response)["received"], 3)
+            analyze.assert_not_called()
+            with upload(3, b"def") as response:
+                self.assertEqual(json.load(response)["received"], 6)
+            for _ in range(100):
+                with urlopen(self.url + "/remakes/analyze/" + job["id"]) as response:
+                    result = json.load(response)
+                if not result.get("running"):
+                    break
+                threading.Event().wait(.01)
+            self.assertEqual(result, {"source": "abcdef"})
+            analyze.assert_called_once()
+
     def test_remake_uses_selected_render_settings(self):
         settings = {"model": "custom.safetensors",
                     "loras": [{"name": "style.safetensors", "strength": 0.7}], "steps": 12}

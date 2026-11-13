@@ -975,7 +975,15 @@ $('#remake-upload').addEventListener('submit', async event => {
   $('#remake-review').hidden = true;
   status.textContent = 'Uploading video and analyzing source shots…';
   try {
-    const {id} = await api('/remakes/analyze', {method:'POST', headers:{'Content-Type':'video/mp4'}, body:file});
+    const {id, chunk_size} = await post('/remakes/upload', {size:file.size});
+    for (let offset = 0; offset < file.size; offset += chunk_size) {
+      const {received} = await api('/remakes/upload/' + id, {
+        method:'POST',
+        headers:{'Content-Type':'application/octet-stream', 'X-Upload-Offset':String(offset)},
+        body:file.slice(offset, offset + chunk_size)
+      });
+      status.textContent = `Uploading video… ${Math.floor(received * 100 / file.size)}%`;
+    }
     status.textContent = 'Analyzing source shots…';
     let result;
     do {

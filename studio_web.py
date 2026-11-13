@@ -39,6 +39,7 @@ ACTIVE_REFINEMENTS = set()
 QUEUE_LOCK = threading.Lock()
 REMAKE_LOCK = threading.Lock()
 REMAKE_ANALYSIS = {}
+MAX_VIDEO_CHUNK = 8 * 1024 * 1024
 MAX_IMAGE = 8 * 1024 * 1024
 MAX_REQUEST = 100 * 1024 * 1024
 Image.MAX_IMAGE_PIXELS = 25_000_000
@@ -500,7 +501,7 @@ class StudioHandler(BaseHTTPRequestHandler):
                 job = REMAKE_ANALYSIS.copy()
             if remake[1] != job.get("id"):
                 return self.json(404, error="This analysis has expired. Analyze the video again.")
-            if job["running"]:
+            if "upload" in job or job.get("running"):
                 return self.json(202, running=True)
             if "error" in job:
                 return self.json(422, error=job["error"])
@@ -563,49 +564,76 @@ class StudioHandler(BaseHTTPRequestHandler):
             return self.serve_file(path)
         self.json(200, **project_data(project, details=True))
 
-    def analyze_remake(self):
+    def start_remake_upload(self):
         try:
             length = int(self.headers.get("Content-Length", "0"))
-        except ValueError:
-            length = 0
-        if not 0 < length <= MAX_VIDEO:
+            if not 0 < length <= 128:
+                raise ValueError()
+            size = json.loads(self.rfile.read(length))["size"]
+        except (ValueError, TypeError, KeyError):
+            return self.json(400, error="Invalid video upload request.")
+        if type(size) is not int or not 0 < size <= MAX_VIDEO:
             return self.json(413, error="Choose an MP4 video up to 1 GB.")
         with REMAKE_LOCK:
-            busy = REMAKE_ANALYSIS.get("running")
-            if not busy:
-                REMAKE_ANALYSIS.clear()
-                REMAKE_ANALYSIS.update(id=uuid.uuid4().hex, running=True)
-        if busy:
-            return self.json(409, error="Studio is already analyzing a video. Try again when it finishes.")
-        directory = None
+            if REMAKE_ANALYSIS.get("running"):
+                return self.json(409, error="Studio is already analyzing a video. Try again when it finishes.")
+            previous = REMAKE_ANALYSIS.get("upload")
+            if previous is not None:
+                previous.cleanup()
+            REMAKE_ANALYSIS.clear()
+            try:
+                directory = TemporaryDirectory(prefix="studio-remake-")
+            except OSError:
+                return self.json(503, error="Studio could not prepare space for this video.")
+            job_id = uuid.uuid4().hex
+            REMAKE_ANALYSIS.update(id=job_id, upload=directory, size=size, received=0)
+        return self.json(201, id=job_id, chunk_size=MAX_VIDEO_CHUNK)
+
+    def upload_remake_chunk(self, job_id):
         try:
-            directory = TemporaryDirectory(prefix="studio-remake-")
-            with (Path(directory.name) / "source.mp4").open("wb") as output:
-                while length:
-                    chunk = self.rfile.read(min(length, 1024 * 1024))
-                    if not chunk:
-                        raise ValueError("The video upload was interrupted.")
-                    output.write(chunk)
-                    length -= len(chunk)
-            job_id = REMAKE_ANALYSIS["id"]
-            threading.Thread(target=analyze_source, args=(REMAKE_ANALYSIS, directory), daemon=True).start()
-        except (ValueError, OSError, RuntimeError):
-            if directory is not None:
+            length = int(self.headers.get("Content-Length", "0"))
+            offset = int(self.headers.get("X-Upload-Offset", "-1"))
+            if not 0 < length <= MAX_VIDEO_CHUNK or offset < 0:
+                raise ValueError()
+            data = self.rfile.read(length)
+        except (ValueError, OSError):
+            return self.json(400, error="Studio could not receive this video chunk.")
+        if len(data) != length:
+            return self.json(400, error="The video upload was interrupted.")
+        with REMAKE_LOCK:
+            job = REMAKE_ANALYSIS
+            directory = job.get("upload")
+            if job_id != job.get("id") or directory is None:
+                return self.json(404, error="This upload has expired. Start the upload again.")
+            received = offset + length
+            if offset != job["received"] or received > job["size"]:
+                return self.json(409, error="The video chunks arrived out of order. Start the upload again.")
+            try:
+                with (Path(directory.name) / "source.mp4").open("ab") as output:
+                    output.write(data)
+                job["received"] = received
+                if received == job["size"]:
+                    job["running"] = True
+                    threading.Thread(target=analyze_source, args=(job, directory), daemon=True).start()
+                    del job["upload"]
+            except (OSError, RuntimeError):
                 directory.cleanup()
-            with REMAKE_LOCK:
-                REMAKE_ANALYSIS.clear()
-            return self.json(400, error="Studio could not receive the video upload.")
-        return self.json(202, id=job_id)
+                job.clear()
+                return self.json(503, error="Studio could not save this video. Start the upload again.")
+        return self.json(202, received=received)
 
     def do_POST(self):
         if not self.allowed():
             return
         origin = getattr(self.server, "public_origin", None) or f"http://{self.headers.get('Host')}"
-        content_type = "video/mp4" if self.path == "/remakes/analyze" else "application/json"
+        chunk = re.fullmatch(r"/remakes/upload/([a-f0-9]{32})", self.path)
+        content_type = "application/octet-stream" if chunk else "application/json"
         if self.headers.get("Origin") != origin or self.headers.get_content_type() != content_type:
             return self.json(403, error="Open Studio from its own address.")
-        if self.path == "/remakes/analyze":
-            return self.analyze_remake()
+        if self.path == "/remakes/upload":
+            return self.start_remake_upload()
+        if chunk:
+            return self.upload_remake_chunk(chunk[1])
         stop = re.fullmatch(r"/projects/([a-f0-9]{32})/cancel", self.path)
         if stop:
             if not request_cancellation([ROOT / stop[1]]):
