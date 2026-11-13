@@ -125,8 +125,18 @@ def ask_qwen(instructions, text, pictures, *, clip_frames=(), reference_notes=No
             headers={"Content-Type": "application/json", "Authorization": "Bearer " + key},
         )
         with urlopen(request, timeout=timeout) as response:
-            choice = json.load(response)["choices"][0]
-        if choice.get("finish_reason") == "length":
+            result = json.load(response)
+        choice = result["choices"][0]
+        finish_reason = choice.get("finish_reason")
+        usage = result.get("usage") or {}
+        print(
+            f"[qwen] prompt_tokens={usage.get('prompt_tokens', 'unknown')} "
+            f"completion_tokens={usage.get('completion_tokens', 'unknown')} "
+            f"total_tokens={usage.get('total_tokens', 'unknown')} "
+            f"max_output_tokens={max_tokens} finish_reason={finish_reason}",
+            flush=True,
+        )
+        if finish_reason == "length":
             continue
         try:
             return json.loads(choice["message"]["content"])
@@ -292,6 +302,8 @@ def plan_and_write(story, pictures, project=None, writer_prompt=DEFAULT_WRITER_P
         "who stands where, what they hold, and what has already happened. If next_opening_state is present, "
         "end this clip in a state that leads into it. Use adjacent states only to anchor the boundary. "
         "Keep the actual action within this shot's planned beat and avoid replaying prior beats. "
+        "When the plan cuts between simultaneous events, describe only the characters and actions "
+        "assigned to this clip's location. Preserve the planned overlap in story time across clips. "
         "Use supplied @imageN labels to bind the relevant visual references to subjects. "
         + REFERENCE_ROLE_INSTRUCTIONS +
         "Include every reference_slots entry for this shot with an @ prefix, even if it was used in a previous shot. "
