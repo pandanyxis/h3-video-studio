@@ -18,6 +18,12 @@ PARAGRAPH_GUIDANCE = (
     "paragraph when it contains distinct beats that need separate shots. Use descriptive backstory to "
     "inform relevant shots, and show it as a separate scene only when the story calls for it. "
 )
+EFFECT_GUIDANCE = (
+    "Preserve the story's visible effects and transformations in the action field. Describe what "
+    "triggers each effect, where it starts, how it develops, and what it reveals or leaves behind. "
+    "Record any intended accompanying sound in the sound field and carry visible effects through "
+    "the opening and closing states when they continue across shots. "
+)
 
 
 def shot_count_instruction(count=None):
@@ -76,7 +82,7 @@ def main():
         "model": args.model,
         "messages": [
             {"role": "system", "content": (
-                shot_count_instruction(args.shots) + PARAGRAPH_GUIDANCE +
+                shot_count_instruction(args.shots) + PARAGRAPH_GUIDANCE + EFFECT_GUIDANCE +
                 "Return only a JSON object with a shots array. Each shot must contain "
                 "nonempty strings: action, camera, sound, start, end. "
                 "Preserve character, clothing and setting details across connected shots. "

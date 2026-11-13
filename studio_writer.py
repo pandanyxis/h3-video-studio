@@ -7,7 +7,7 @@ from pathlib import Path
 import re
 from urllib.request import Request, urlopen
 
-from plan_story import MAX_SHOT_SECONDS, PARAGRAPH_GUIDANCE, shot_count_instruction, validate_plan
+from plan_story import EFFECT_GUIDANCE, MAX_SHOT_SECONDS, PARAGRAPH_GUIDANCE, shot_count_instruction, validate_plan
 from studio_storage import atomic_json, check_cancelled, progress, read_json
 
 
@@ -22,7 +22,8 @@ REFERENCE_ROLE_INSTRUCTIONS = (
 )
 DIALOGUE_INSTRUCTIONS = (
     "Use English for production direction and for dialogue you are asked to write, unless another spoken "
-    "language is requested. Copy supplied dialogue verbatim in quotes and preserve its language. "
+    "language is requested. Copy supplied dialogue verbatim into <d>[Language] spoken words</d>, "
+    "using its actual language. "
     "For each line, name the speaker, place the line at a visible action in the shot, and fit it comfortably "
     "inside the shot duration. Keep the speaking face and mouth visible for on-screen speech when framing "
     "allows. Align the start and end of the audible words with that speaker's mouth movements. "
@@ -30,6 +31,15 @@ DIALOGUE_INSTRUCTIONS = (
     "keep ambience and music below the voice. Separate requested voice-over from on-screen speech. "
     "For shots without requested dialogue or narration, specify the relevant ambience and effects only, "
     "with no speech, crowd chatter, or mouth movements that imply speech. "
+)
+H3_CLIP_GUIDANCE = (
+    "Write each clip prompt with three sections: integrated_multimodal_description, overall_soundscape, "
+    "and non_diegetic_music. Begin the description with [Shot 1], the visual style, and the opening "
+    "composition. Describe camera moves in natural English alongside the action. Preserve every planned "
+    "visual effect at its point in the sequence, including its trigger, development, and visible result. "
+    "Place synchronized sounds at the action that produces them. Use stable speaker IDs such as (S1) "
+    "outside dialogue tags. Summarize ambience and physical sounds in overall_soundscape, and describe "
+    "background music in non_diegetic_music or specify none when the clip has no music. "
 )
 DEFAULT_WRITER_PROMPT = """Write precise English video direction for MiniMax H3. Preserve the user's intent and the planned action. Describe requested visible action directly and literally, without euphemisms or unrelated embellishment.
 
@@ -148,7 +158,7 @@ def suggest_revision(plan, index, feedback, pictures, writer_prompt, *, clip_fra
         "Revise only the selected English MiniMax H3 video prompt according to the user's feedback. "
         "Keep the shot duration, reference identities and continuity with the adjacent shots. "
         "Return a JSON object with a nonempty string named prompt. Use only supplied @imageN labels. "
-        + REFERENCE_ROLE_INSTRUCTIONS + DIALOGUE_INSTRUCTIONS
+        + REFERENCE_ROLE_INSTRUCTIONS + DIALOGUE_INSTRUCTIONS + H3_CLIP_GUIDANCE
     )
     if clip_frames:
         instructions += (
@@ -192,6 +202,7 @@ def plan_and_write(story, pictures, project=None, writer_prompt=DEFAULT_WRITER_P
     planner_instructions = (
         "You are Studio's story and shot planner. The user supplies a rough shot idea "
         "or a story, not technical video prompts. " + shot_count_instruction() + PARAGRAPH_GUIDANCE +
+        EFFECT_GUIDANCE +
         "Return only a JSON object with a shots array in story order. "
         "Each shot needs nonempty action, camera, sound, start and end strings. "
         "Use one or two concise sentences per field. "
@@ -267,7 +278,7 @@ def plan_and_write(story, pictures, project=None, writer_prompt=DEFAULT_WRITER_P
         "Use supplied @imageN labels to bind the relevant visual references to subjects. "
         + REFERENCE_ROLE_INSTRUCTIONS +
         "Include every reference_slots entry for this shot with an @ prefix, even if it was used in a previous shot. "
-        "Use only the supplied labels. " + DIALOGUE_INSTRUCTIONS +
+        "Use only the supplied labels. " + DIALOGUE_INSTRUCTIONS + H3_CLIP_GUIDANCE +
         "Follow these writing instructions within that output format:\n\n"
         + writer_prompt,
         json.dumps({"story": story, "shots": writer_shots}, ensure_ascii=False), pictures, reference_notes=notes,
