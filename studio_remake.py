@@ -9,21 +9,22 @@ from plan_story import MAX_SHOT_SECONDS, SHOT_FIELDS, validate_plan
 from studio_refine import clip_duration, extract_review_frame
 from studio_writer import ask_qwen
 
-MAX_VIDEO = 250 * 1024 * 1024
-MAX_DURATION = 120
-MAX_SHOTS = 60
+MAX_VIDEO_MIB = 1250
+MAX_VIDEO = MAX_VIDEO_MIB * 1024 * 1024
+MAX_DURATION = 600
+MAX_SHOTS = 600
 SHOT_DESCRIPTIONS = ", ".join(SHOT_FIELDS)
 
 
 def source_ranges(video):
     duration = clip_duration(video)
     if not math.isfinite(duration) or not 0 < duration <= MAX_DURATION:
-        raise ValueError(f"Use a video up to {MAX_DURATION} seconds long.")
+        raise ValueError(f"Use a video up to {MAX_DURATION // 60} minutes long.")
     result = subprocess.run(
         ["ffmpeg", "-nostdin", "-hide_banner", "-i", str(video), "-an",
          "-vf", "scale=320:320:force_original_aspect_ratio=decrease,select='gt(scene,0.35)',showinfo",
          "-f", "null", "-"],
-        capture_output=True, text=True, check=True, timeout=120,
+        capture_output=True, text=True, check=True, timeout=MAX_DURATION,
     )
     cuts = [float(value) for value in re.findall(r"pts_time:(\d+(?:\.\d+)?)\s", result.stderr)]
     boundaries = [0.]
