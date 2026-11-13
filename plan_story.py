@@ -8,6 +8,16 @@ from urllib.request import Request, urlopen
 MAX_SHOTS = 20
 MAX_SHOT_SECONDS = 10
 SHOT_FIELDS = ("action", "camera", "sound", "start", "end")
+PARAGRAPH_GUIDANCE = (
+    "When the supplied story contains paragraph breaks, use them as cues to reassess what the viewer "
+    "should see or hear. When there are no paragraph breaks, plan directly from the story's beats. "
+    "Look for changes in the main action, speaker, point of view, time, or location. "
+    "If the focus shifts within a continuous action, consider reframing within the shot. "
+    "Use a new shot when a cut clarifies the change or gives a meaningful reaction its own frame. "
+    "Keep the same shot across paragraphs when the action and framing still work, and split a single "
+    "paragraph when it contains distinct beats that need separate shots. Use descriptive backstory to "
+    "inform relevant shots, and show it as a separate scene only when the story calls for it. "
+)
 
 
 def shot_count_instruction(count=None):
@@ -66,7 +76,8 @@ def main():
         "model": args.model,
         "messages": [
             {"role": "system", "content": (
-                shot_count_instruction(args.shots) + "Return only a JSON object with a shots array. Each shot must contain "
+                shot_count_instruction(args.shots) + PARAGRAPH_GUIDANCE +
+                "Return only a JSON object with a shots array. Each shot must contain "
                 "nonempty strings: action, camera, sound, start, end. "
                 "Preserve character, clothing and setting details across connected shots. "
                 "Describe each opening and closing state. Add a numeric duration_seconds between 1 "

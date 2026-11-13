@@ -7,7 +7,7 @@ from pathlib import Path
 import re
 from urllib.request import Request, urlopen
 
-from plan_story import MAX_SHOT_SECONDS, shot_count_instruction, validate_plan
+from plan_story import MAX_SHOT_SECONDS, PARAGRAPH_GUIDANCE, shot_count_instruction, validate_plan
 from studio_storage import atomic_json, check_cancelled, progress, read_json
 
 
@@ -191,7 +191,7 @@ def plan_and_write(story, pictures, project=None, writer_prompt=DEFAULT_WRITER_P
     labels = ", ".join(slot for slot, _ in pictures)
     planner_instructions = (
         "You are Studio's story and shot planner. The user supplies a rough shot idea "
-        "or a story, not technical video prompts. " + shot_count_instruction() +
+        "or a story, not technical video prompts. " + shot_count_instruction() + PARAGRAPH_GUIDANCE +
         "Return only a JSON object with a shots array in story order. "
         "Each shot needs nonempty action, camera, sound, start and end strings. "
         "Use one or two concise sentences per field. "
@@ -203,7 +203,7 @@ def plan_and_write(story, pictures, project=None, writer_prompt=DEFAULT_WRITER_P
         "split it at a clear point in the action. Continue that action from the split without replaying "
         "its setup, reintroducing the characters, or jumping ahead to an unrelated event. "
         "The cut flag describes how THIS shot starts. Set cut to false for continuous action. "
-        "Set it to true for a distinct scene or a hard camera cut called for by the story. "
+        "Set it to true for a distinct scene or when you plan a hard camera cut, even within the same scene. "
         "In sound, record the requested dialogue and narration with their language, speaker and exact words. "
         "Write new spoken lines in English unless the user requests another language. "
         "Allow enough time for natural delivery. Split dialogue between complete lines, not within a line. "

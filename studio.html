@@ -138,7 +138,8 @@ summary { cursor:pointer; font-size:13px; font-weight:550; }
       <section class="panel" id="input-panel" aria-label="New video project">
         <form id="create-form">
           <label for="story">Shot idea or story</label>
-          <textarea id="story" required maxlength="20000" placeholder="For example, a woman opens her seaside café. She brews coffee, discovers a letter, and looks outside…"></textarea>
+          <textarea id="story" required maxlength="20000" aria-describedby="story-help" placeholder="For example, a woman opens her seaside café. She brews coffee, discovers a letter, and looks outside…"></textarea>
+          <p class="hint" id="story-help">You can type or paste multiple paragraphs. Leave a blank line between paragraphs to help Studio spot changes in focus when planning shots.</p>
           <details class="writer-settings" id="writer-settings">
             <summary>Prompt Writer settings</summary>
             <label for="writer-prompt">Writing instructions for this project</label>
