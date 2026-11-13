@@ -144,6 +144,30 @@ summary { cursor:pointer; font-size:13px; font-weight:550; }
   <div class="layout">
     <div>
       <section class="panel" id="input-panel" aria-label="New video project">
+        <label for="project-tool">Tool</label>
+        <select id="project-tool">
+          <option value="story">Text to video</option>
+          <option value="remake">Remake from video</option>
+        </select>
+        <div id="remake-tool" hidden>
+          <form id="remake-upload">
+            <label for="remake-video">Source video</label>
+            <input id="remake-video" type="file" accept="video/mp4,.mp4" required>
+            <p class="hint">MP4 up to 250 MiB and two minutes.</p>
+            <button class="primary">Analyze video</button>
+          </form>
+          <p id="remake-status" role="status" aria-live="polite"></p>
+          <form id="remake-review" hidden>
+            <h2>Character and location assignments</h2>
+            <p class="hint">Use the shot previews to check who Studio grouped together. Choose a character sheet for each replacement.</p>
+            <div id="remake-assignments"></div>
+            <h2>Review source shots</h2>
+            <p class="hint">Check the cast and location for each shot, and correct the action and camera descriptions. H3 recreates the shots from prompts and still images. Timing is rounded to H3's frame grid.</p>
+            <div id="remake-shots"></div>
+            <label><input id="approve-remake" type="checkbox" required> I reviewed the shots and assignments</label>
+            <button class="primary">Render remake</button>
+          </form>
+        </div>
         <form id="create-form">
           <label for="story">Shot idea or story</label>
           <textarea id="story" required maxlength="20000" aria-describedby="story-help" placeholder="For example, a woman opens her seaside café. She brews coffee, discovers a letter, and looks outside…"></textarea>
@@ -762,7 +786,8 @@ function navigate() {
   $('#project-panel').hidden = !state.id;
   $('#project-step').textContent = 'Loading project status…';
   $('#project-status').textContent = '';
-  $('#intro').hidden = Boolean(state.id) || settings;
+  const remake = $('#project-tool').value === 'remake';
+  $('#intro').hidden = Boolean(state.id) || settings || remake;
   $('#shots-section').hidden = true;
   $('#project-output').hidden = true;
   $('#render-preview').hidden = true;
@@ -771,7 +796,7 @@ function navigate() {
   $('#cancel-project').hidden = true;
   $('#log').hidden = true;
   $('#page-label').textContent = settings ? 'Settings' : state.id ? 'Your project' : 'New project';
-  $('#heading').textContent = settings ? 'Movie defaults' : state.id ? 'Opening project…' : 'What story do you want to tell?';
+  $('#heading').textContent = settings ? 'Movie defaults' : state.id ? 'Opening project…' : remake ? 'Remake a video' : 'What story do you want to tell?';
   state.referenceId = null;
   state.shotSignature = null;
   pipeline('input');
@@ -786,6 +811,196 @@ function encode(file) {
     reader.readAsDataURL(file);
   });
 }
+const remakeFields = {start:'Opening state', action:'Action', camera:'Camera', sound:'Sound', end:'Closing state'};
+let remakeAnalysis;
+
+function remakeControl(parent, tag, title) {
+  const label = document.createElement('label');
+  label.textContent = title;
+  const control = document.createElement(tag);
+  label.append(' ', control);
+  parent.append(label);
+  return control;
+}
+function remakeOption(select, value, label, selected = false) {
+  select.add(new Option(label, value, false, selected));
+}
+function showRemakeReview(analysis) {
+  const assignments = $('#remake-assignments');
+  const shots = $('#remake-shots');
+  assignments.replaceChildren();
+  shots.replaceChildren();
+  const rows = {};
+  for (const [kind, choices] of [
+    ['roles', [['keep','Keep appearance'], ['replace','Replace with character sheet']]],
+    ['locations', [['recreate','Recreate from description'], ['reuse','Use a source frame as set reference'], ['replace','Replace location']]]
+  ]) {
+    rows[kind] = new Map();
+    for (const [name, description] of Object.entries(analysis[kind])) {
+      const row = document.createElement('fieldset');
+      const legend = document.createElement('legend');
+      legend.textContent = name;
+      row.append(legend);
+      const mode = remakeControl(row, 'select', 'Treatment');
+      choices.forEach(([value, label]) => remakeOption(mode, value, label));
+      const visual = remakeControl(row, 'textarea', 'Appearance');
+      visual.required = true;
+      visual.maxLength = 1000;
+      visual.value = description;
+      const file = remakeControl(row, 'input', kind === 'roles' ? 'Character sheet' : 'Location image (optional)');
+      file.type = 'file';
+      file.accept = 'image/png,image/jpeg,image/webp';
+      const frame = remakeControl(row, 'select', 'Source frame');
+      analysis.shots.forEach((shot, index) => {
+        if (kind !== 'locations' || shot.location !== name) return;
+        shot.frames.forEach((_, sample) => remakeOption(frame, `${index}:${sample}`, `Shot ${index + 1} · image ${sample + 1}`));
+      });
+      const update = () => {
+        file.parentElement.hidden = mode.value !== 'replace';
+        file.required = mode.value === 'replace' && kind === 'roles';
+        frame.parentElement.hidden = mode.value !== 'reuse';
+      };
+      mode.addEventListener('change', update);
+      update();
+      assignments.append(row);
+      rows[kind].set(name, {mode, visual, file, frame});
+    }
+  }
+  const shotRows = analysis.shots.map((shot, index) => {
+    const row = document.createElement('details');
+    const heading = document.createElement('summary');
+    heading.textContent = `Shot ${index + 1} · ${shot.start_time.toFixed(2)}–${shot.end_time.toFixed(2)}s · ${shot.roles.join(', ') || 'No cast'} · ${shot.location}`;
+    row.open = index === 0 || Boolean(shot.uncertainty);
+    const previews = document.createElement('div');
+    previews.className = 'thumbnails';
+    shot.frames.forEach((frame, i) => {
+      const image = document.createElement('img');
+      image.src = 'data:image/jpeg;base64,' + frame;
+      image.alt = `Shot ${index + 1}, sample ${i + 1}`;
+      previews.append(image);
+    });
+    row.append(heading, previews);
+    if (shot.uncertainty) {
+      const note = document.createElement('p');
+      note.textContent = shot.uncertainty;
+      row.append(note);
+    }
+    const cast = document.createElement('fieldset');
+    const legend = document.createElement('legend');
+    legend.textContent = 'Cast in this shot';
+    cast.append(legend);
+    const roles = [...rows.roles.keys()].map(name => {
+      const checkbox = remakeControl(cast, 'input', name);
+      checkbox.type = 'checkbox';
+      checkbox.checked = shot.roles.includes(name);
+      return [name, checkbox];
+    });
+    row.append(cast);
+    const location = remakeControl(row, 'select', 'Location');
+    rows.locations.forEach((_, name) => remakeOption(location, name, name, shot.location === name));
+    const fields = Object.entries(remakeFields).map(([key, label]) => {
+      const input = remakeControl(row, 'textarea', label);
+      input.value = shot[key];
+      input.required = true;
+      input.maxLength = 2000;
+      return [key, input];
+    });
+    const updateHeading = () => {
+      const names = roles.filter(([, field]) => field.checked).map(([name]) => name);
+      heading.textContent = `Shot ${index + 1} · ${shot.start_time.toFixed(2)}–${shot.end_time.toFixed(2)}s · ${names.join(', ') || 'No cast'} · ${location.value}`;
+    };
+    row.addEventListener('change', updateHeading);
+    shots.append(row);
+    return {roles, location, fields};
+  });
+  remakeAnalysis = {analysis, rows, shotRows};
+  $('#approve-remake').checked = false;
+  $('#remake-review').hidden = false;
+}
+$('#project-tool').addEventListener('change', () => {
+  const remake = $('#project-tool').value === 'remake';
+  $('#remake-tool').hidden = !remake;
+  $('#create-form').hidden = remake;
+  $('#intro').hidden = remake;
+  $('#heading').textContent = remake ? 'Remake a video' : 'What story do you want to tell?';
+});
+$('#remake-upload').addEventListener('submit', async event => {
+  event.preventDefault();
+  const file = $('#remake-video').files[0];
+  const button = event.submitter;
+  const status = $('#remake-status');
+  if (file.size > 250 * 1024 * 1024) {
+    status.textContent = 'Choose an MP4 video up to 250 MiB.';
+    return;
+  }
+  button.disabled = true;
+  $('#remake-video').disabled = true;
+  $('#remake-review').hidden = true;
+  status.textContent = 'Uploading video and analyzing source shots…';
+  try {
+    const {id} = await api('/remakes/analyze', {method:'POST', headers:{'Content-Type':'video/mp4'}, body:file});
+    status.textContent = 'Analyzing source shots…';
+    let result;
+    do {
+      await new Promise(resolve => setTimeout(resolve, 2500));
+      result = await api('/remakes/analyze/' + id);
+    } while (result.running);
+    showRemakeReview(result);
+    status.textContent = `Review ${result.shots.length} detected shots below.`;
+  } catch (error) { status.textContent = error.message; }
+  finally {
+    button.disabled = false;
+    $('#remake-video').disabled = false;
+  }
+});
+$('#remake-video').addEventListener('change', () => {
+  $('#remake-review').hidden = true;
+});
+$('#remake-review').addEventListener('input', event => {
+  if (event.target !== $('#approve-remake')) $('#approve-remake').checked = false;
+});
+$('#remake-review').addEventListener('submit', async event => {
+  event.preventDefault();
+  const {analysis, rows, shotRows} = remakeAnalysis;
+  const button = event.submitter;
+  const status = $('#remake-status');
+  button.disabled = true;
+  status.textContent = 'Preparing the approved remake…';
+  try {
+    const shots = analysis.shots.map(({frames, uncertainty, ...shot}, index) => {
+      const row = shotRows[index];
+      return {...shot, ...Object.fromEntries(row.fields.map(([key, field]) => [key, field.value])),
+        roles:row.roles.filter(([, field]) => field.checked).map(([name]) => name),
+        location:row.location.value};
+    });
+    const images = [];
+    const payload = {shots, images, aspect:analysis.aspect, approved:$('#approve-remake').checked};
+    for (const [kind, names] of [
+      ['roles', new Set(shots.flatMap(shot => shot.roles))],
+      ['locations', new Set(shots.map(shot => shot.location))]
+    ]) {
+      const assignments = [];
+      for (const name of names) {
+        const {mode, visual, file, frame} = rows[kind].get(name);
+        const item = {mode:mode.value, description:visual.value};
+        const upload = mode.value === 'replace' && file.files[0];
+        if (upload && upload.size > 8 * 1024 * 1024) throw new Error(`Use an image up to 8 MiB for ${name}.`);
+        if (upload || mode.value === 'reuse') {
+          if (images.length === 9) throw new Error('Use up to nine reference images across the remake.');
+          item.image = images.length;
+          const [shot, sample] = frame.value.split(':').map(Number);
+          images.push(upload ? await encode(upload) : analysis.shots[shot].frames[sample]);
+        }
+        assignments.push([name, item]);
+      }
+      payload[kind] = Object.fromEntries(assignments);
+    }
+    const result = await post('/remakes', payload);
+    status.textContent = 'Remake queued.';
+    location.hash = result.id;
+  } catch (error) { status.textContent = error.message; }
+  finally { button.disabled = false; }
+});
 $('#images').addEventListener('change', () => {
   const notes = new Map([...$('#previews').querySelectorAll('textarea')].map(field => [field.dataset.file,field.value]));
   const files = [...$('#images').files];

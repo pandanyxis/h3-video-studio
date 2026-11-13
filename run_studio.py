@@ -284,11 +284,13 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("story", type=Path)
     parser.add_argument("project", type=Path)
-    parser.add_argument("references", type=Path, nargs="+")
+    parser.add_argument("references", type=Path, nargs="*")
     parser.add_argument("--profile", default="studio-turbo8")
     parser.add_argument("--aspect", choices=ASPECT_SIZES)
     parser.add_argument("--resume", action="store_true")
     args = parser.parse_args()
+    if not args.references and not (args.project / "shots.json").is_file():
+        parser.error("Supply at least one reference picture for a new story")
     if len(args.references) > 9:
         parser.error("Supply at most nine reference pictures")
     if any(mimetypes.guess_type(path.name)[0] not in {"image/jpeg", "image/png", "image/webp"}

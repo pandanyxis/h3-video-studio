@@ -50,7 +50,7 @@ COPY requirements.txt /opt/studio/requirements.txt
 RUN /opt/venv/bin/pip install --no-cache-dir -r /opt/studio/requirements.txt
 RUN /usr/bin/python3 -m venv /opt/studio-mcp \
     && /opt/studio-mcp/bin/pip install --no-cache-dir mcp==1.30.0
-COPY plan_story.py prepare_timeline.py export_project.py run_studio.py studio_writer.py studio_storage.py studio_profiles.py studio_render.py studio_refine.py studio_web.py studio_mcp.py studio.html /opt/studio/
+COPY plan_story.py prepare_timeline.py export_project.py run_studio.py studio_writer.py studio_storage.py studio_profiles.py studio_render.py studio_refine.py studio_remake.py studio_web.py studio_mcp.py studio.html /opt/studio/
 COPY runpod/h3-verified-preview.patch /opt/combined/
 RUN git -C /ComfyUI/custom_nodes/ComfyUI-H3-Continuity-Studio apply /opt/combined/h3-verified-preview.patch \
     && python3 /opt/studio/studio_profiles.py

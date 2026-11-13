@@ -14,6 +14,7 @@ import re
 import shutil
 import subprocess
 import sys
+from tempfile import TemporaryDirectory
 import threading
 import uuid
 import warnings
@@ -25,6 +26,7 @@ from studio_profiles import MAX_LORAS, SELECTION_PREFIX, default_settings, selec
 from studio_refine import (MAX_FEEDBACK, MAX_REVISED_PROMPT, clip_duration, refine_clip,
                            review_film, revision_inputs)
 from studio_render import RenderClient, RenderError
+from studio_remake import MAX_VIDEO, analyze, compile_plan
 from studio_storage import atomic_json, gpu_lock, progress, read_json
 from studio_writer import (DEFAULT_WRITER_PROMPT, MAX_REFERENCE_NOTE, MAX_WRITER_PROMPT,
                            bind_shot_references, qwen_ready, read_reference_notes, referenced_slots)
@@ -35,6 +37,8 @@ QUEUE = ThreadPoolExecutor(max_workers=1)
 ACTIVE = set()
 ACTIVE_REFINEMENTS = set()
 QUEUE_LOCK = threading.Lock()
+REMAKE_LOCK = threading.Lock()
+REMAKE_ANALYSIS = {}
 MAX_IMAGE = 8 * 1024 * 1024
 MAX_REQUEST = 100 * 1024 * 1024
 Image.MAX_IMAGE_PIXELS = 25_000_000
@@ -74,7 +78,7 @@ def render_profiles():
     )]
 
 
-def stage(payload):
+def stage(payload, *, plan=None):
     story, images = payload.get("story"), payload.get("images")
     writer_prompt = payload.get("writer_prompt", "")
     if not isinstance(writer_prompt, str) or len(writer_prompt) > MAX_WRITER_PROMPT:
@@ -89,7 +93,7 @@ def stage(payload):
         raise ValueError("This render profile is unavailable.")
     if not isinstance(story, str) or not story.strip() or len(story) > 20_000:
         raise ValueError("Enter a shot idea or story of up to 20,000 characters.")
-    if not isinstance(images, list) or not 1 <= len(images) <= 9:
+    if not isinstance(images, list) or not (0 if plan else 1) <= len(images) <= 9:
         raise ValueError("Select one to nine reference images.")
     descriptions = payload.get("image_notes", [""] * len(images))
     if not isinstance(descriptions, list) or len(descriptions) != len(images) or any(
@@ -100,6 +104,8 @@ def stage(payload):
     try:
         (project / "story.txt").write_text(story.strip(), encoding="utf-8")
         (project / "writer-prompt.txt").write_text(writer_prompt.strip() or DEFAULT_WRITER_PROMPT, encoding="utf-8")
+        if plan:
+            atomic_json(project / "shots.json", plan)
         notes = {}
         for index, (encoded, description) in enumerate(zip(images, descriptions), 1):
             if not isinstance(encoded, str) or len(encoded) > 4 * ((MAX_IMAGE + 2) // 3):
@@ -382,6 +388,22 @@ def clear_projects():
     return len(projects)
 
 
+def analyze_source(job, directory):
+    try:
+        job.update(result=analyze(Path(directory.name) / "source.mp4"))
+    except ValueError as error:
+        job.update(error=str(error))
+    except subprocess.SubprocessError:
+        job.update(error="Studio could not analyze this MP4. Try a shorter excerpt or re-export the video.")
+    except Exception as error:
+        print(f"Studio remake analysis: {error}", file=sys.stderr, flush=True)
+        job.update(error="Remake analysis is unavailable. Check Qwen and FFmpeg on the pod.")
+    finally:
+        directory.cleanup()
+        with REMAKE_LOCK:
+            job["running"] = False
+
+
 class StudioHandler(BaseHTTPRequestHandler):
     def setup(self):
         super().setup()
@@ -472,6 +494,17 @@ class StudioHandler(BaseHTTPRequestHandler):
             return
         if self.path == "/startup-status":
             return self.json(200, **startup_status())
+        remake = re.fullmatch(r"/remakes/analyze/([a-f0-9]{32})", self.path)
+        if remake:
+            with REMAKE_LOCK:
+                job = REMAKE_ANALYSIS.copy()
+            if remake[1] != job.get("id"):
+                return self.json(404, error="This analysis has expired. Analyze the video again.")
+            if job["running"]:
+                return self.json(202, running=True)
+            if "error" in job:
+                return self.json(422, error=job["error"])
+            return self.json(200, **job["result"])
         if self.path == "/profiles":
             return self.json(200, profiles=render_profiles())
         if self.path == "/writer-prompt":
@@ -530,13 +563,49 @@ class StudioHandler(BaseHTTPRequestHandler):
             return self.serve_file(path)
         self.json(200, **project_data(project, details=True))
 
+    def analyze_remake(self):
+        try:
+            length = int(self.headers.get("Content-Length", "0"))
+        except ValueError:
+            length = 0
+        if not 0 < length <= MAX_VIDEO:
+            return self.json(413, error="Choose an MP4 video up to 250 MiB.")
+        with REMAKE_LOCK:
+            busy = REMAKE_ANALYSIS.get("running")
+            if not busy:
+                REMAKE_ANALYSIS.clear()
+                REMAKE_ANALYSIS.update(id=uuid.uuid4().hex, running=True)
+        if busy:
+            return self.json(409, error="Studio is already analyzing a video. Try again when it finishes.")
+        directory = None
+        try:
+            directory = TemporaryDirectory(prefix="studio-remake-")
+            with (Path(directory.name) / "source.mp4").open("wb") as output:
+                while length:
+                    chunk = self.rfile.read(min(length, 1024 * 1024))
+                    if not chunk:
+                        raise ValueError("The video upload was interrupted.")
+                    output.write(chunk)
+                    length -= len(chunk)
+            job_id = REMAKE_ANALYSIS["id"]
+            threading.Thread(target=analyze_source, args=(REMAKE_ANALYSIS, directory), daemon=True).start()
+        except (ValueError, OSError, RuntimeError):
+            if directory is not None:
+                directory.cleanup()
+            with REMAKE_LOCK:
+                REMAKE_ANALYSIS.clear()
+            return self.json(400, error="Studio could not receive the video upload.")
+        return self.json(202, id=job_id)
+
     def do_POST(self):
         if not self.allowed():
             return
         origin = getattr(self.server, "public_origin", None) or f"http://{self.headers.get('Host')}"
-        if (self.headers.get("Origin") != origin
-                or self.headers.get_content_type() != "application/json"):
+        content_type = "video/mp4" if self.path == "/remakes/analyze" else "application/json"
+        if self.headers.get("Origin") != origin or self.headers.get_content_type() != content_type:
             return self.json(403, error="Open Studio from its own address.")
+        if self.path == "/remakes/analyze":
+            return self.analyze_remake()
         stop = re.fullmatch(r"/projects/([a-f0-9]{32})/cancel", self.path)
         if stop:
             if not request_cancellation([ROOT / stop[1]]):
@@ -560,7 +629,7 @@ class StudioHandler(BaseHTTPRequestHandler):
                 return self.json(409, error="This project cannot be resumed.")
             return self.json(202, id=project.name)
         revision = re.fullmatch(r"/projects/([a-f0-9]{32})/(revisions|refinements|film-review|film-revision)", self.path)
-        if self.path != "/projects" and not revision:
+        if self.path not in {"/projects", "/remakes"} and not revision:
             return self.json(404, error="Unknown address.")
         if revision and not (ROOT / revision[1] / "status").is_file():
             return self.json(404, error="Project not found.")
@@ -576,7 +645,13 @@ class StudioHandler(BaseHTTPRequestHandler):
                 return self.json(202, **review)
             if revision and revision[2] == "film-review":
                 return self.json(202, **stage_film_review(ROOT / revision[1], payload))
-            if revision and revision[2] == "film-revision":
+            if self.path == "/remakes":
+                if payload.get("approved") is not True or payload.get("aspect") not in tuple(ASPECT_SIZES):
+                    raise ValueError("Review and approve the remake before rendering.")
+                plan = compile_plan(payload)
+                project = stage({"story": plan["story"], "images": payload["images"],
+                                 "aspect": payload.get("aspect")}, plan=plan)
+            elif revision and revision[2] == "film-revision":
                 project = stage_film_revision(ROOT / revision[1], payload)
             else:
                 project = stage_revision(ROOT / revision[1], payload) if revision else stage(payload)
