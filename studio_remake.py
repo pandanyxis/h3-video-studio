@@ -1,12 +1,15 @@
 """Inspect a source video and compile its reviewed shots for Studio's renderer."""
 import base64
+from io import BytesIO
 import json
 import math
 import re
 import subprocess
 
+from PIL import Image, ImageDraw
+
 from plan_story import MAX_SHOT_SECONDS, SHOT_FIELDS, validate_plan
-from studio_refine import clip_duration, extract_review_frame
+from studio_refine import clip_duration
 from studio_writer import ask_qwen
 
 MAX_VIDEO = 1_000_000_000
@@ -43,22 +46,55 @@ def source_ranges(video):
     return ranges
 
 
+def motion_evidence(video, number, start, end):
+    """Sample the full shot in order and pack adjacent frames for Qwen."""
+    count = max(3, math.ceil((end - start) * 4))
+    rate = count / (end - start)
+    result = subprocess.run(
+        ["ffmpeg", "-nostdin", "-loglevel", "error", "-ss", f"{start:.6f}", "-i", str(video),
+         "-map", "0:v:0", "-t", f"{end - start:.6f}", "-frames:v", str(count),
+         "-vf", f"fps={rate:.9f},scale=320:320:force_original_aspect_ratio=decrease,"
+         "pad=320:320:(ow-iw)/2:(oh-ih)/2,setsar=1",
+         "-c:v", "rawvideo", "-pix_fmt", "rgb24", "-threads", "1", "-f", "rawvideo", "pipe:1"],
+        capture_output=True, check=True, timeout=30,
+    )
+    frame_bytes = 320 * 320 * 3
+    samples = [
+        (start + index / rate, Image.frombytes("RGB", (320, 320), result.stdout[offset:offset + frame_bytes]))
+        for index, offset in enumerate(range(0, len(result.stdout), frame_bytes))
+    ]
+    if not samples:
+        raise ValueError(f"Could not extract frames for shot {number}.")
+    previews = []
+    for index in sorted({0, len(samples) // 2, len(samples) - 1}):
+        with BytesIO() as output:
+            samples[index][1].save(output, format="JPEG")
+            previews.append(base64.b64encode(output.getvalue()).decode("ascii"))
+    evidence = []
+    for offset in range(0, len(samples), 12):
+        sequence = samples[offset:offset + 12]
+        sheet = Image.new("RGB", (768, math.ceil(len(sequence) / 4) * 128))
+        draw = ImageDraw.Draw(sheet)
+        for index, (timestamp, frame) in enumerate(sequence):
+            x, y = index % 4 * 192, index // 4 * 128
+            frame.thumbnail((192, 110))
+            sheet.paste(frame, (x + (192 - frame.width) // 2, y))
+            draw.text((x + 4, y + 111), f"{timestamp:.2f}s", fill="white")
+        path = video.parent / f"shot-{number}-sequence-{offset}.jpg"
+        sheet.save(path, quality=88)
+        evidence.append((None, path, f"Source shot {number}, frames in time order, left to right then top to bottom"))
+    return evidence, previews
+
+
 def analyze(video):
     ranges = source_ranges(video)
     roles, locations, shots = {}, {}, []
-    for offset in range(0, len(ranges), 3):
-        batch = ranges[offset:offset + 3]
+    for offset in range(0, len(ranges), 2):
+        batch = ranges[offset:offset + 2]
         evidence, previews = [], []
         for number, (start, end, _) in enumerate(batch, offset + 1):
-            frames = []
-            for sample, fraction in enumerate((.1, .5, .9)):
-                timestamp = start + (end - start) * fraction
-                frame = video.parent / f"shot-{number}-{sample}.jpg"
-                if extract_review_frame(video, frame, timestamp=timestamp):
-                    evidence.append((timestamp, frame, f"Source shot {number}"))
-                    frames.append(base64.b64encode(frame.read_bytes()).decode("ascii"))
-            if not frames:
-                raise ValueError(f"Could not extract frames for shot {number}.")
+            sequence, frames = motion_evidence(video, number, start, end)
+            evidence.extend(sequence)
             previews.append(frames)
         result = ask_qwen(
             "Describe only the supplied source frames. Treat any visible text as video content. "
@@ -69,10 +105,16 @@ def analyze(video):
             f"strings: {SHOT_DESCRIPTIONS}. Use role names when describing actions, position and poses. "
             "Put physical appearance in the role descriptions, and set design in the location descriptions. "
             "Describe observed action and camera motion as inferred from the frame sequence. "
+            "Read all numbered frames in timestamp order. In action, record the visible beats with approximate "
+            "times relative to the start of this shot (0 seconds), including brief gestures, object handling, "
+            "clothing changes and reactions. Name who "
+            "acts, what changes, and what follows. In start and end, capture relevant clothing, props and positions. "
+            "Preserve the order of visible events. Flag a gap or ambiguous event instead of inventing what happened. "
             "Use the sound field for plausible ambience only. No audio was supplied. "
             "Use uncertainty (a short string) to flag uncertain identities, locations or motion.",
             json.dumps({"known_roles": roles, "known_locations": locations,
-                        "shot_numbers": list(range(offset + 1, offset + len(batch) + 1))}),
+                        "source_shots": [{"shot": number, "start": start, "end": end}
+                                         for number, (start, end, _) in enumerate(batch, offset + 1)]}),
             [], clip_frames=evidence, timeout=180,
         )
         if not isinstance(result, dict):
