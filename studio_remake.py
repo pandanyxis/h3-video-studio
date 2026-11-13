@@ -10,8 +10,8 @@ from studio_refine import clip_duration, extract_review_frame
 from studio_writer import ask_qwen
 
 MAX_VIDEO = 1_000_000_000
-MAX_DURATION = 600
-MAX_SHOTS = 600
+MAX_DURATION = 30 * 60
+MAX_SHOTS = 1800
 SHOT_DESCRIPTIONS = ", ".join(SHOT_FIELDS)
 
 
