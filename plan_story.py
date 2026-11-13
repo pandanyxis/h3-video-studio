@@ -11,6 +11,12 @@ SHOT_FIELDS = ("action", "camera", "sound", "start", "end")
 PARAGRAPH_GUIDANCE = (
     "When the supplied story contains paragraph breaks, use them as cues to reassess what the viewer "
     "should see or hear. When there are no paragraph breaks, plan directly from the story's beats. "
+    "Read each paragraph in story context. Resolve who or what each description refers to and when it "
+    "applies. Distinguish the state already in effect when a beat begins, the action that happens on "
+    "screen, and the resulting state. Put clearly stated or implied existing conditions into start, "
+    "visible changes into action, and their results into end. A description of a current state does "
+    "not require inventing an action that caused it. Keep memories, hypotheticals, and off-screen "
+    "background separate from the current visible scene unless the story calls for showing them. "
     "Look for changes in the main action, speaker, point of view, time, or location. "
     "If the focus shifts within a continuous action, consider reframing within the shot. "
     "Use a new shot when a cut clarifies the change or gives a meaningful reaction its own frame. "
@@ -39,6 +45,9 @@ CONTINUITY_GUIDANCE = (
     "Keep garments that stay on, and preserve changes such as an opened coat, rolled sleeves, "
     "or a torn jacket until a later story event changes them. Use reference images as the wardrobe "
     "baseline where applicable, then follow the wardrobe established by the story. "
+    "Treat a clearly stated or unambiguously implied absence of clothing as a wardrobe state. "
+    "Record whether a specific garment is absent or the character is unclothed. Carry that state "
+    "forward until the story establishes a change. When the text is ambiguous, keep the established wardrobe. "
 )
 
 
