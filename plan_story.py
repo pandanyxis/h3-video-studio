@@ -24,7 +24,14 @@ EFFECT_GUIDANCE = (
     "Record any intended accompanying sound in the sound field and carry visible effects through "
     "the opening and closing states when they continue across shots. "
 )
-WARDROBE_GUIDANCE = (
+CONTINUITY_GUIDANCE = (
+    "Track each character by name across the story. Preserve their identity and current appearance, "
+    "including any transformation, until the story changes them again. Record each visible character's "
+    "pose, position, orientation, and held objects in start and end where they matter. Also track changes "
+    "to important props and the set, such as an object being moved or a door being left open. "
+    "Continue directly from the last state when a cut changes only the camera angle. After a time or "
+    "location change, establish the new pose and positions while carrying forward lasting changes. "
+    "When a character or object returns, use its last established state unless the story gives a reason to change it. "
     "Record explicit clothing actions in action, naming the character, garment, and visible change. "
     "In start and end, state the relevant wardrobe for each visible character, including garment "
     "position and condition, layers, footwear, and accessories when relevant. Track each change "
@@ -91,7 +98,7 @@ def main():
         "model": args.model,
         "messages": [
             {"role": "system", "content": (
-                shot_count_instruction(args.shots) + PARAGRAPH_GUIDANCE + EFFECT_GUIDANCE + WARDROBE_GUIDANCE +
+                shot_count_instruction(args.shots) + PARAGRAPH_GUIDANCE + EFFECT_GUIDANCE + CONTINUITY_GUIDANCE +
                 "Return only a JSON object with a shots array. Each shot must contain "
                 "nonempty strings: action, camera, sound, start, end. "
                 "Preserve character, clothing and setting details across connected shots. "
