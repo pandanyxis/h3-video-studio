@@ -816,7 +816,7 @@ function encode(file) {
     reader.readAsDataURL(file);
   });
 }
-const remakeFields = {start:'Opening state', action:'Action', camera:'Camera', sound:'Sound', end:'Closing state'};
+const remakeFields = {spatial_layout:'Spatial layout', start:'Opening state', action:'Action', camera:'Camera', sound:'Sound', end:'Closing state'};
 let remakeAnalysis;
 
 function remakeControl(parent, tag, title) {
@@ -921,8 +921,8 @@ function showRemakeReview(analysis) {
     rows.locations.forEach((_, name) => remakeOption(location, name, name, shot.location === name));
     const fields = Object.entries(remakeFields).map(([key, label]) => {
       const input = remakeControl(row, 'textarea', label);
-      input.value = shot[key];
-      input.required = true;
+      input.value = shot[key] ?? '';
+      input.required = key !== 'spatial_layout';
       input.maxLength = 2000;
       return [key, input];
     });

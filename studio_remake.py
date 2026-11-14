@@ -121,6 +121,12 @@ def analyze(video):
             "them. Assign a stable visual label even when their identity is unknown. Use an empty roles array "
             "only when no person can be distinguished in any supplied frame for that shot. "
             "Put physical appearance in the role descriptions, and set design in the location descriptions. "
+            "For each shot also return a spatial_layout string describing the arrangement and orientation of "
+            "people and relevant furniture as shown. Describe who faces whom, which seats face each other, "
+            "and what separates them when visible. Carry over established geometry from nearby views of the "
+            "same setup when supported by the frames. Base the layout on the source images, including unusual "
+            "arrangements such as facing seats in an aircraft cabin. If the layout is unclear, flag it in "
+            "uncertainty and leave spatial_layout empty or describe only the visible portion. "
             "Describe observed action and camera motion as inferred from the frame sequence. "
             "Use preceding-shot context only to interpret the current shots. Return no entry for that context. "
             "Read all numbered frames in timestamp order. In action, record the visible beats with approximate "
@@ -152,11 +158,13 @@ def analyze(video):
         descriptions = validate_plan(result, len(batch))
         for description, (start, end, cut), frames in zip(descriptions, batch, previews):
             cast, location = description.get("roles"), description.get("location")
+            layout = description.get("spatial_layout", "")
             if (not isinstance(cast, list) or any(not isinstance(name, str) or name not in roles for name in cast)
                     or not isinstance(location, str) or location not in locations):
                 raise ValueError("Qwen returned an unknown character or location. Try analyzing again.")
             shots.append({
                 **{field: description[field] for field in SHOT_FIELDS},
+                "spatial_layout": layout.strip()[:2000] if isinstance(layout, str) else "",
                 "start_time": start, "end_time": end, "cut": cut, "roles": list(dict.fromkeys(cast)),
                 "location": location, "frames": frames, "uncertainty": str(description.get("uncertainty") or ""),
             })
@@ -203,6 +211,10 @@ def compile_plan(payload):
         shot = {field: source[field].strip() for field in SHOT_FIELDS}
         if any(len(value) > 2000 for value in shot.values()):
             raise ValueError("Shot descriptions may contain up to 2,000 characters each.")
+        layout = source.get("spatial_layout", "")
+        if not isinstance(layout, str) or len(layout) > 2000:
+            raise ValueError("The spatial layout may contain up to 2,000 characters.")
+        layout = layout.strip()
         assignments, slots = [], []
         for name, item, is_role in [
             *((name, roles[name], True) for name in dict.fromkeys(cast)),
@@ -230,6 +242,7 @@ def compile_plan(payload):
         prompt = "\n".join([
             f"Recreate this shot in {duration:.3f} seconds using these approved visual assignments:",
             *assignments,
+            *([f"Preserve this spatial layout and the facing directions: {layout}"] if layout else []),
             *(f"{field.capitalize()}: {shot[field]}" for field in SHOT_FIELDS),
         ])
         plan.append(dict(shot, cut=source["cut"], duration_seconds=duration, prompt=prompt,
